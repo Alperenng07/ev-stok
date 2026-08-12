@@ -125,6 +125,39 @@ button {
   color: var(--muted);
 }
 
+.sync-pill {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--done-bg);
+  color: var(--done);
+}
+
+.sync-pill.err {
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+.banner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.banner.warn {
+  background: rgba(154, 77, 15, 0.1);
+  color: var(--warn);
+}
+
+.banner.err {
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

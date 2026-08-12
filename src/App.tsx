@@ -20,6 +20,9 @@ export default function App() {
     query,
     setQuery,
     stats,
+    loading,
+    syncError,
+    cloudEnabled,
     addItem,
     updateItem,
     removeItem,
@@ -46,9 +49,25 @@ export default function App() {
       <header className="top">
         <div className="brand-block">
           <p className="brand">Ev Stok</p>
-          <p className="tagline">Eksikler ve yenilemeler tek yerde</p>
+          <p className="tagline">
+            {cloudEnabled ? 'Ortak liste — sen ve eşin aynı veriyi görür' : 'Eksikler ve yenilemeler'}
+          </p>
         </div>
+        {cloudEnabled ? (
+          <span className={`sync-pill${syncError ? ' err' : ''}`}>
+            {syncError ? 'Senkron hata' : 'Bulut açık'}
+          </span>
+        ) : null}
       </header>
+
+      {!cloudEnabled ? (
+        <div className="banner warn">
+          Ortak kullanım için Supabase bağlanmalı. Ayarlar tamamlanınca sen ve eşin aynı listeyi
+          göreceksiniz.
+        </div>
+      ) : null}
+
+      {syncError ? <div className="banner err">{syncError}</div> : null}
 
       <section className="stats" aria-label="Özet">
         <div className="stat">
@@ -92,7 +111,11 @@ export default function App() {
       </div>
 
       <main className="list">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="empty">
+            <p>Liste yükleniyor…</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="empty">
             <p>Burada henüz ürün yok.</p>
             <button type="button" className="btn btn-primary" onClick={openCreate}>
@@ -129,7 +152,7 @@ export default function App() {
           if (editing) updateItem(editing.id, draft)
           else addItem(draft)
         }}
-        onDelete={editing ? () => removeItem(editing.id) : undefined}
+        onDelete={editing ? () => void removeItem(editing.id) : undefined}
       />
     </div>
   )

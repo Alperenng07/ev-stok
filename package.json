@@ -12,6 +12,7 @@
     "reminders:test": "node scripts/reminders.mjs --test"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "dotenv": "^17.4.2",
     "node-cron": "^4.6.0",
     "nodemailer": "^7.0.13",

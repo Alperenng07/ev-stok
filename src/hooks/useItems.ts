@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { addDays, todayISO } from '../lib/date'
-import { loadItems, saveItems } from '../lib/storage'
+import { renewDueItems } from '../lib/storage'
+import {
+  deleteItem as deleteCloudItem,
+  fetchItems,
+  isCloudEnabled,
+  supabase,
+  upsertItem,
+} from '../lib/supabase'
 import type { FilterId, ItemDraft, StockItem } from '../types'
 
 function createItem(draft: ItemDraft): StockItem {
@@ -21,68 +28,150 @@ function createItem(draft: ItemDraft): StockItem {
 }
 
 export function useItems() {
-  const [items, setItems] = useState<StockItem[]>(() => loadItems())
+  const [items, setItems] = useState<StockItem[]>([])
+  const [loading, setLoading] = useState(isCloudEnabled)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
 
+  const persist = useCallback(async (item: StockItem) => {
+    if (!isCloudEnabled) return
+    try {
+      await upsertItem(item)
+      setSyncError(null)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Kayıt hatası')
+    }
+  }, [])
+
   useEffect(() => {
-    saveItems(items)
-  }, [items])
+    if (!isCloudEnabled || !supabase) {
+      setLoading(false)
+      return
+    }
 
-  const addItem = useCallback((draft: ItemDraft) => {
-    setItems((prev) => [createItem(draft), ...prev])
-  }, [])
+    let cancelled = false
 
-  const updateItem = useCallback((id: string, draft: ItemDraft) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              name: draft.name.trim(),
-              neededQty: draft.neededQty,
-              currentQty: draft.currentQty,
-              unit: draft.unit.trim() || 'adet',
-              dueDate: draft.dueDate,
-              renewalDays: draft.renewalDays,
-              notes: draft.notes.trim(),
-              updatedAt: new Date().toISOString(),
-            }
-          : item,
-      ),
-    )
-  }, [])
-
-  const removeItem = useCallback((id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id))
-  }, [])
-
-  const togglePurchased = useCallback((id: string) => {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item
-        const now = new Date().toISOString()
-        if (!item.purchased) {
-          const nextDue =
-            item.renewalDays && item.renewalDays > 0
-              ? addDays(todayISO(), item.renewalDays)
-              : item.dueDate
-          return {
-            ...item,
-            purchased: true,
-            currentQty: item.currentQty + item.neededQty,
-            dueDate: nextDue,
-            updatedAt: now,
+    async function boot() {
+      try {
+        const remote = await fetchItems()
+        if (cancelled) return
+        const renewed = renewDueItems(remote)
+        setItems(renewed)
+        for (const item of renewed) {
+          if (remote.find((r) => r.id === item.id)?.purchased !== item.purchased) {
+            await upsertItem(item)
           }
         }
-        return {
-          ...item,
-          purchased: false,
-          updatedAt: now,
+        setSyncError(null)
+      } catch (err) {
+        if (!cancelled) {
+          setSyncError(err instanceof Error ? err.message : 'Bağlantı hatası')
         }
-      }),
-    )
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void boot()
+
+    const channel = supabase
+      .channel('items-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        () => {
+          void fetchItems()
+            .then((remote) => setItems(renewDueItems(remote)))
+            .catch(() => undefined)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      void channel.unsubscribe()
+    }
   }, [])
+
+  const addItem = useCallback(
+    (draft: ItemDraft) => {
+      const item = createItem(draft)
+      setItems((prev) => [item, ...prev])
+      void persist(item)
+    },
+    [persist],
+  )
+
+  const updateItem = useCallback(
+    (id: string, draft: ItemDraft) => {
+      let next: StockItem | null = null
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item
+          next = {
+            ...item,
+            name: draft.name.trim(),
+            neededQty: draft.neededQty,
+            currentQty: draft.currentQty,
+            unit: draft.unit.trim() || 'adet',
+            dueDate: draft.dueDate,
+            renewalDays: draft.renewalDays,
+            notes: draft.notes.trim(),
+            updatedAt: new Date().toISOString(),
+          }
+          return next
+        }),
+      )
+      if (next) void persist(next)
+    },
+    [persist],
+  )
+
+  const removeItem = useCallback(async (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id))
+    if (!isCloudEnabled) return
+    try {
+      await deleteCloudItem(id)
+      setSyncError(null)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Silme hatası')
+    }
+  }, [])
+
+  const togglePurchased = useCallback(
+    (id: string) => {
+      let next: StockItem | null = null
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item
+          const now = new Date().toISOString()
+          if (!item.purchased) {
+            const nextDue =
+              item.renewalDays && item.renewalDays > 0
+                ? addDays(todayISO(), item.renewalDays)
+                : item.dueDate
+            next = {
+              ...item,
+              purchased: true,
+              currentQty: item.currentQty + item.neededQty,
+              dueDate: nextDue,
+              updatedAt: now,
+            }
+            return next
+          }
+          next = {
+            ...item,
+            purchased: false,
+            updatedAt: now,
+          }
+          return next
+        }),
+      )
+      if (next) void persist(next)
+    },
+    [persist],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr')
@@ -115,6 +204,9 @@ export function useItems() {
     query,
     setQuery,
     stats,
+    loading,
+    syncError,
+    cloudEnabled: isCloudEnabled,
     addItem,
     updateItem,
     removeItem,
