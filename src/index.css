@@ -1,0 +1,4 @@
+/* Global resets live lightly; app styles in App.css */
+body {
+  margin: 0;
+}
