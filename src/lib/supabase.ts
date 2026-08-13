@@ -24,6 +24,10 @@ export const supabase: SupabaseClient | null = isCloudEnabled
   ? createClient(url!, key!)
   : null
 
+function asDateOnly(value: string): string {
+  return value.slice(0, 10)
+}
+
 export function toStockItem(row: DbItem): StockItem {
   return {
     id: row.id,
@@ -31,9 +35,12 @@ export function toStockItem(row: DbItem): StockItem {
     neededQty: Number(row.needed_qty),
     currentQty: Number(row.current_qty),
     unit: row.unit,
-    dueDate: row.due_date,
-    renewalDays: row.renewal_days,
-    purchased: row.purchased,
+    dueDate: asDateOnly(row.due_date),
+    renewalDays:
+      row.renewal_days === null || row.renewal_days === undefined
+        ? null
+        : Number(row.renewal_days),
+    purchased: Boolean(row.purchased),
     notes: row.notes ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,

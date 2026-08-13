@@ -58,8 +58,10 @@ export function useItems() {
         if (cancelled) return
         const renewed = renewDueItems(remote)
         setItems(renewed)
+        // Yenilenenleri sırayla yaz; kullanıcı tıklamasıyla yarışmasın diye await
         for (const item of renewed) {
-          if (remote.find((r) => r.id === item.id)?.purchased !== item.purchased) {
+          const before = remote.find((r) => r.id === item.id)
+          if (before && before.purchased !== item.purchased) {
             await upsertItem(item)
           }
         }
@@ -81,8 +83,21 @@ export function useItems() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'items' },
         () => {
+          // Canlı yenilemede sunucu halini al; daha yeni yerel değişiklikleri ezme
           void fetchItems()
-            .then((remote) => setItems(renewDueItems(remote)))
+            .then((remote) => {
+              if (cancelled) return
+              setItems((local) => {
+                const map = new Map(remote.map((item) => [item.id, item]))
+                for (const item of local) {
+                  const remoteItem = map.get(item.id)
+                  if (!remoteItem || item.updatedAt > remoteItem.updatedAt) {
+                    map.set(item.id, item)
+                  }
+                }
+                return Array.from(map.values())
+              })
+            })
             .catch(() => undefined)
         },
       )
@@ -147,10 +162,10 @@ export function useItems() {
           if (item.id !== id) return item
           const now = new Date().toISOString()
           if (!item.purchased) {
-            const nextDue =
-              item.renewalDays && item.renewalDays > 0
-                ? addDays(todayISO(), item.renewalDays)
-                : item.dueDate
+            const renewal =
+              item.renewalDays && item.renewalDays > 0 ? item.renewalDays : null
+            // Alındı olunca sonraki vade ileri alınır; bugün tekrar kırmızıya düşmez
+            const nextDue = renewal ? addDays(todayISO(), renewal) : item.dueDate
             next = {
               ...item,
               purchased: true,
