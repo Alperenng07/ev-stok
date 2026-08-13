@@ -78,7 +78,7 @@ export function HouseholdGate({
               </button>
             </div>
             <p className="gate-hint">
-              Mevcut listeniz için kod: <strong>BIZIMEV</strong>
+              Mevcut listeniz için kod: <strong>TURKSOYS</strong>
             </p>
           </>
         ) : null}
@@ -125,7 +125,7 @@ export function HouseholdGate({
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="Örn. BIZIMEV"
+                placeholder="Örn. TURKSOYS"
                 required
                 minLength={4}
                 maxLength={12}

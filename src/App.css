@@ -331,6 +331,40 @@ button {
   width: fit-content;
 }
 
+.linkish.danger {
+  color: var(--pending);
+}
+
+.mail-help {
+  margin: 0 0 14px;
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.mail-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.mail-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(30, 42, 34, 0.04);
+  font-size: 0.88rem;
+}
+
+.mail-list .muted {
+  color: var(--muted);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

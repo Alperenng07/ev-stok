@@ -3,6 +3,7 @@ import { FamilyBar } from './components/FamilyBar'
 import { HouseholdGate } from './components/HouseholdGate'
 import { ItemForm } from './components/ItemForm'
 import { ItemRow } from './components/ItemRow'
+import { ReminderMailsSheet } from './components/ReminderMailsSheet'
 import { useHousehold } from './hooks/useHousehold'
 import { useItems } from './hooks/useItems'
 import type { FilterId, StockItem } from './types'
@@ -36,6 +37,7 @@ export default function App() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<StockItem | null>(null)
   const [extraGate, setExtraGate] = useState<'create' | 'join' | null>(null)
+  const [mailsOpen, setMailsOpen] = useState(false)
 
   function openCreate() {
     setEditing(null)
@@ -107,6 +109,7 @@ export default function App() {
         onLeave={household.leaveActive}
         onCreateRequest={() => setExtraGate('create')}
         onJoinRequest={() => setExtraGate('join')}
+        onMailsRequest={() => setMailsOpen(true)}
       />
 
       {syncError ? <div className="banner err">{syncError}</div> : null}
@@ -195,6 +198,13 @@ export default function App() {
           else addItem(draft)
         }}
         onDelete={editing ? () => void removeItem(editing.id) : undefined}
+      />
+
+      <ReminderMailsSheet
+        open={mailsOpen}
+        householdId={household.active.id}
+        householdName={household.active.name}
+        onClose={() => setMailsOpen(false)}
       />
     </div>
   )

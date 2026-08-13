@@ -8,6 +8,7 @@ type Props = {
   onLeave: () => void
   onCreateRequest: () => void
   onJoinRequest: () => void
+  onMailsRequest: () => void
 }
 
 export function FamilyBar({
@@ -17,6 +18,7 @@ export function FamilyBar({
   onLeave,
   onCreateRequest,
   onJoinRequest,
+  onMailsRequest,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -79,6 +81,15 @@ export function FamilyBar({
             }}
           >
             Başka aileye katıl
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              onMailsRequest()
+            }}
+          >
+            Hatırlatma mailleri
           </button>
           <button
             type="button"

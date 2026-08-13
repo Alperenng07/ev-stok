@@ -166,3 +166,48 @@ export async function deleteItem(id: string): Promise<void> {
   const { error } = await supabase.from('items').delete().eq('id', id)
   if (error) throw error
 }
+
+export type ReminderEmail = {
+  id: string
+  householdId: string
+  email: string
+}
+
+export async function listReminderEmails(
+  householdId: string,
+): Promise<ReminderEmail[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('reminder_emails')
+    .select('id,household_id,email')
+    .eq('household_id', householdId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as { id: string; household_id: string; email: string }[]).map(
+    (row) => ({
+      id: row.id,
+      householdId: row.household_id,
+      email: row.email,
+    }),
+  )
+}
+
+export async function addReminderEmail(
+  householdId: string,
+  email: string,
+): Promise<void> {
+  if (!supabase) throw new Error('Bulut bağlı değil')
+  const clean = email.trim().toLowerCase()
+  if (!clean.includes('@')) throw new Error('Geçerli bir e-posta girin')
+  const { error } = await supabase.from('reminder_emails').insert({
+    household_id: householdId,
+    email: clean,
+  })
+  if (error) throw error
+}
+
+export async function removeReminderEmail(id: string): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.from('reminder_emails').delete().eq('id', id)
+  if (error) throw error
+}
