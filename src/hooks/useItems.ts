@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { addDays, todayISO } from '../lib/date'
-import { renewDueItems } from '../lib/storage'
 import {
   deleteItem as deleteCloudItem,
   fetchItems,
@@ -23,6 +22,25 @@ function createItem(draft: ItemDraft): StockItem {
     purchased: false,
     notes: draft.notes.trim(),
     createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function withPurchasedToggle(item: StockItem): StockItem {
+  const now = new Date().toISOString()
+  if (!item.purchased) {
+    const renewal = item.renewalDays && item.renewalDays > 0 ? item.renewalDays : null
+    return {
+      ...item,
+      purchased: true,
+      currentQty: item.currentQty + item.neededQty,
+      dueDate: renewal ? addDays(todayISO(), renewal) : item.dueDate,
+      updatedAt: now,
+    }
+  }
+  return {
+    ...item,
+    purchased: false,
     updatedAt: now,
   }
 }
@@ -56,15 +74,8 @@ export function useItems() {
       try {
         const remote = await fetchItems()
         if (cancelled) return
-        const renewed = renewDueItems(remote)
-        setItems(renewed)
-        // Yenilenenleri sırayla yaz; kullanıcı tıklamasıyla yarışmasın diye await
-        for (const item of renewed) {
-          const before = remote.find((r) => r.id === item.id)
-          if (before && before.purchased !== item.purchased) {
-            await upsertItem(item)
-          }
-        }
+        // Sunucudaki hali olduğu gibi göster — otomatik "alınacak"a çevirme yok
+        setItems(remote)
         setSyncError(null)
       } catch (err) {
         if (!cancelled) {
@@ -83,7 +94,6 @@ export function useItems() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'items' },
         () => {
-          // Canlı yenilemede sunucu halini al; daha yeni yerel değişiklikleri ezme
           void fetchItems()
             .then((remote) => {
               if (cancelled) return
@@ -120,25 +130,23 @@ export function useItems() {
 
   const updateItem = useCallback(
     (id: string, draft: ItemDraft) => {
-      let next: StockItem | null = null
-      setItems((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item
-          next = {
-            ...item,
-            name: draft.name.trim(),
-            neededQty: draft.neededQty,
-            currentQty: draft.currentQty,
-            unit: draft.unit.trim() || 'adet',
-            dueDate: draft.dueDate,
-            renewalDays: draft.renewalDays,
-            notes: draft.notes.trim(),
-            updatedAt: new Date().toISOString(),
-          }
-          return next
-        }),
-      )
-      if (next) void persist(next)
+      setItems((prev) => {
+        const current = prev.find((item) => item.id === id)
+        if (!current) return prev
+        const next: StockItem = {
+          ...current,
+          name: draft.name.trim(),
+          neededQty: draft.neededQty,
+          currentQty: draft.currentQty,
+          unit: draft.unit.trim() || 'adet',
+          dueDate: draft.dueDate,
+          renewalDays: draft.renewalDays,
+          notes: draft.notes.trim(),
+          updatedAt: new Date().toISOString(),
+        }
+        void persist(next)
+        return prev.map((item) => (item.id === id ? next : item))
+      })
     },
     [persist],
   )
@@ -156,34 +164,13 @@ export function useItems() {
 
   const togglePurchased = useCallback(
     (id: string) => {
-      let next: StockItem | null = null
-      setItems((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item
-          const now = new Date().toISOString()
-          if (!item.purchased) {
-            const renewal =
-              item.renewalDays && item.renewalDays > 0 ? item.renewalDays : null
-            // Alındı olunca sonraki vade ileri alınır; bugün tekrar kırmızıya düşmez
-            const nextDue = renewal ? addDays(todayISO(), renewal) : item.dueDate
-            next = {
-              ...item,
-              purchased: true,
-              currentQty: item.currentQty + item.neededQty,
-              dueDate: nextDue,
-              updatedAt: now,
-            }
-            return next
-          }
-          next = {
-            ...item,
-            purchased: false,
-            updatedAt: now,
-          }
-          return next
-        }),
-      )
-      if (next) void persist(next)
+      setItems((prev) => {
+        const current = prev.find((item) => item.id === id)
+        if (!current) return prev
+        const next = withPurchasedToggle(current)
+        void persist(next)
+        return prev.map((item) => (item.id === id ? next : item))
+      })
     },
     [persist],
   )

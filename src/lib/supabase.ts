@@ -75,7 +75,9 @@ export async function fetchItems(): Promise<StockItem[]> {
 
 export async function upsertItem(item: StockItem): Promise<void> {
   if (!supabase) return
-  const { error } = await supabase.from('items').upsert(toDbItem(item))
+  const { error } = await supabase.from('items').upsert(toDbItem(item), {
+    onConflict: 'id',
+  })
   if (error) throw error
 }
 

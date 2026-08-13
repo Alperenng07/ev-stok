@@ -11,10 +11,15 @@ export function ItemRow({ item, onToggle, onEdit }: Props) {
   const overdue = isOverdue(item.dueDate, item.purchased)
   const until = daysUntil(item.dueDate)
   let dueLabel = formatShortTR(item.dueDate)
-  if (!item.purchased) {
-    if (until === 0) dueLabel = 'Bugün'
-    else if (until === 1) dueLabel = 'Yarın'
-    else if (until < 0) dueLabel = `${Math.abs(until)} gün gecikti`
+
+  if (item.purchased) {
+    dueLabel = until > 0 ? `Alındı · sonraki ${formatShortTR(item.dueDate)}` : 'Alındı'
+  } else if (until === 0) {
+    dueLabel = 'Bugün'
+  } else if (until === 1) {
+    dueLabel = 'Yarın'
+  } else if (until < 0) {
+    dueLabel = `${Math.abs(until)} gün gecikti`
   }
 
   return (
@@ -34,7 +39,7 @@ export function ItemRow({ item, onToggle, onEdit }: Props) {
       <button type="button" className="item-body" onClick={onEdit}>
         <div className="item-top">
           <h3>{item.name}</h3>
-          <span className="due-chip">{dueLabel}</span>
+          <span className={`due-chip${item.purchased ? ' done' : ''}`}>{dueLabel}</span>
         </div>
         <div className="item-meta">
           <span>
