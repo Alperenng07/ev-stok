@@ -1,6 +1,30 @@
--- Ev Stok: ortak ürün listesi
+-- Ev Stok: aile (household) destekli şema
+-- Supabase SQL Editor'da çalıştırın.
+-- Önce: Authentication → Providers → Anonymous → Enable
+
+-- Aileler
+create table if not exists public.households (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  invite_code text not null unique,
+  created_at timestamptz not null default now()
+);
+
+-- Üyelik
+create table if not exists public.household_members (
+  household_id uuid not null references public.households (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (household_id, user_id)
+);
+
+create index if not exists household_members_user_idx
+  on public.household_members (user_id);
+
+-- Ürünler
 create table if not exists public.items (
   id uuid primary key,
+  household_id uuid references public.households (id) on delete cascade,
   name text not null,
   needed_qty numeric not null default 1,
   current_qty numeric not null default 0,
@@ -13,17 +37,167 @@ create table if not exists public.items (
   updated_at timestamptz not null default now()
 );
 
+-- Mevcut items tablosuna household_id ekle
+alter table public.items
+  add column if not exists household_id uuid references public.households (id) on delete cascade;
+
+-- Mevcut veriyi koru: varsayılan aile
+insert into public.households (id, name, invite_code)
+values (
+  'a1111111-1111-4111-8111-111111111111',
+  'Bizim Ev',
+  'BIZIMEV'
+)
+on conflict (invite_code) do nothing;
+
+update public.items
+set household_id = 'a1111111-1111-4111-8111-111111111111'
+where household_id is null;
+
+alter table public.items
+  alter column household_id set not null;
+
+create index if not exists items_household_idx on public.items (household_id);
+
+-- RLS
+alter table public.households enable row level security;
+alter table public.household_members enable row level security;
 alter table public.items enable row level security;
 
--- Kişisel ev uygulaması: giriş yok, anon okuma/yazma (sadece bu proje anahtarıyla)
+-- Eski açık politikaları kaldır
 drop policy if exists "items_select_anon" on public.items;
 drop policy if exists "items_insert_anon" on public.items;
 drop policy if exists "items_update_anon" on public.items;
 drop policy if exists "items_delete_anon" on public.items;
+drop policy if exists "households_select" on public.households;
+drop policy if exists "members_select" on public.household_members;
+drop policy if exists "items_select" on public.items;
+drop policy if exists "items_insert" on public.items;
+drop policy if exists "items_update" on public.items;
+drop policy if exists "items_delete" on public.items;
 
-create policy "items_select_anon" on public.items for select to anon using (true);
-create policy "items_insert_anon" on public.items for insert to anon with check (true);
-create policy "items_update_anon" on public.items for update to anon using (true) with check (true);
-create policy "items_delete_anon" on public.items for delete to anon using (true);
+create policy "households_select" on public.households
+  for select to authenticated
+  using (
+    id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  );
 
-alter publication supabase_realtime add table public.items;
+create policy "members_select" on public.household_members
+  for select to authenticated
+  using (user_id = auth.uid());
+
+create policy "items_select" on public.items
+  for select to authenticated
+  using (
+    household_id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  );
+
+create policy "items_insert" on public.items
+  for insert to authenticated
+  with check (
+    household_id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  );
+
+create policy "items_update" on public.items
+  for update to authenticated
+  using (
+    household_id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  )
+  with check (
+    household_id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  );
+
+create policy "items_delete" on public.items
+  for delete to authenticated
+  using (
+    household_id in (
+      select household_id from public.household_members where user_id = auth.uid()
+    )
+  );
+
+-- Aile oluştur
+create or replace function public.create_household(p_name text)
+returns public.households
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text;
+  v_row public.households;
+begin
+  if auth.uid() is null then
+    raise exception 'Oturum gerekli';
+  end if;
+  if p_name is null or length(trim(p_name)) < 2 then
+    raise exception 'Aile adı en az 2 karakter olmalı';
+  end if;
+
+  loop
+    v_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
+    exit when not exists (select 1 from public.households where invite_code = v_code);
+  end loop;
+
+  insert into public.households (name, invite_code)
+  values (trim(p_name), v_code)
+  returning * into v_row;
+
+  insert into public.household_members (household_id, user_id)
+  values (v_row.id, auth.uid());
+
+  return v_row;
+end;
+$$;
+
+-- Davet kodu ile katıl
+create or replace function public.join_household(p_code text)
+returns public.households
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.households;
+begin
+  if auth.uid() is null then
+    raise exception 'Oturum gerekli';
+  end if;
+
+  select * into v_row
+  from public.households
+  where invite_code = upper(trim(p_code));
+
+  if v_row.id is null then
+    raise exception 'Davet kodu bulunamadı';
+  end if;
+
+  insert into public.household_members (household_id, user_id)
+  values (v_row.id, auth.uid())
+  on conflict do nothing;
+
+  return v_row;
+end;
+$$;
+
+grant execute on function public.create_household(text) to authenticated;
+grant execute on function public.join_household(text) to authenticated;
+
+-- Realtime
+do $$
+begin
+  alter publication supabase_realtime add table public.items;
+exception
+  when duplicate_object then null;
+  when others then
+    if sqlerrm ilike '%already%member%' then null; else raise; end if;
+end $$;

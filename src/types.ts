@@ -1,5 +1,13 @@
+export type Household = {
+  id: string
+  name: string
+  inviteCode: string
+  createdAt: string
+}
+
 export type StockItem = {
   id: string
+  householdId: string
   name: string
   neededQty: number
   currentQty: number

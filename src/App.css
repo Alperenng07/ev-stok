@@ -158,6 +158,179 @@ button {
   color: var(--pending);
 }
 
+.btn-secondary {
+  background: rgba(30, 42, 34, 0.08);
+  color: var(--ink);
+}
+
+.btn-chip {
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 247, 0.85);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--moss);
+}
+
+.family-bar {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.family-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  backdrop-filter: blur(8px);
+}
+
+.family-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.family-code {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.family-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #fbf8f3;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.family-menu > button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 650;
+}
+
+.family-menu > button:hover {
+  background: rgba(47, 93, 69, 0.08);
+}
+
+.family-menu > button.danger {
+  color: var(--pending);
+}
+
+.family-switch {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.family-switch p {
+  margin: 0;
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.family-switch button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 650;
+}
+
+.family-switch button.active {
+  background: rgba(47, 93, 69, 0.12);
+  color: var(--moss);
+}
+
+.family-switch small {
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+.gate {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px 16px;
+  backdrop-filter: blur(10px);
+  animation: rise 0.4s ease both;
+}
+
+.gate h1 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 1.45rem;
+}
+
+.gate-lead {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.gate-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.gate-actions .btn,
+.gate-form .btn {
+  width: 100%;
+}
+
+.gate-hint {
+  margin: 16px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.gate-form {
+  display: grid;
+  gap: 12px;
+}
+
+.linkish {
+  border: 0;
+  background: transparent;
+  color: var(--moss);
+  font-weight: 650;
+  padding: 0;
+  text-align: left;
+  width: fit-content;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

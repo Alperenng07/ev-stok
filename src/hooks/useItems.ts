@@ -9,10 +9,11 @@ import {
 } from '../lib/supabase'
 import type { FilterId, ItemDraft, StockItem } from '../types'
 
-function createItem(draft: ItemDraft): StockItem {
+function createItem(draft: ItemDraft, householdId: string): StockItem {
   const now = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
+    householdId,
     name: draft.name.trim(),
     neededQty: draft.neededQty,
     currentQty: draft.currentQty,
@@ -45,9 +46,9 @@ function withPurchasedToggle(item: StockItem): StockItem {
   }
 }
 
-export function useItems() {
+export function useItems(householdId: string | null) {
   const [items, setItems] = useState<StockItem[]>([])
-  const [loading, setLoading] = useState(isCloudEnabled)
+  const [loading, setLoading] = useState(Boolean(householdId))
   const [syncError, setSyncError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
@@ -63,20 +64,22 @@ export function useItems() {
   }, [])
 
   useEffect(() => {
-    if (!isCloudEnabled || !supabase) {
+    if (!householdId || !isCloudEnabled || !supabase) {
+      setItems([])
       setLoading(false)
       return
     }
 
     let cancelled = false
+    setLoading(true)
 
     async function boot() {
       try {
-        const remote = await fetchItems()
-        if (cancelled) return
-        // Sunucudaki hali olduğu gibi göster — otomatik "alınacak"a çevirme yok
-        setItems(remote)
-        setSyncError(null)
+        const remote = await fetchItems(householdId!)
+        if (!cancelled) {
+          setItems(remote)
+          setSyncError(null)
+        }
       } catch (err) {
         if (!cancelled) {
           setSyncError(err instanceof Error ? err.message : 'Bağlantı hatası')
@@ -89,17 +92,23 @@ export function useItems() {
     void boot()
 
     const channel = supabase
-      .channel('items-live')
+      .channel(`items-live-${householdId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'items' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'items',
+          filter: `household_id=eq.${householdId}`,
+        },
         () => {
-          void fetchItems()
+          void fetchItems(householdId!)
             .then((remote) => {
               if (cancelled) return
               setItems((local) => {
                 const map = new Map(remote.map((item) => [item.id, item]))
                 for (const item of local) {
+                  if (item.householdId !== householdId) continue
                   const remoteItem = map.get(item.id)
                   if (!remoteItem || item.updatedAt > remoteItem.updatedAt) {
                     map.set(item.id, item)
@@ -117,15 +126,16 @@ export function useItems() {
       cancelled = true
       void channel.unsubscribe()
     }
-  }, [])
+  }, [householdId])
 
   const addItem = useCallback(
     (draft: ItemDraft) => {
-      const item = createItem(draft)
+      if (!householdId) return
+      const item = createItem(draft, householdId)
       setItems((prev) => [item, ...prev])
       void persist(item)
     },
-    [persist],
+    [householdId, persist],
   )
 
   const updateItem = useCallback(
