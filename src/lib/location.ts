@@ -1,4 +1,5 @@
 import type { LocationPreference } from '../types/location'
+import { isValidTurkeyCoord } from './geocode'
 
 export type UserLocation = {
   lat: number
@@ -43,6 +44,9 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
 
   const lat = pos.coords.latitude
   const lng = pos.coords.longitude
+  if (!isValidTurkeyCoord(lat, lng)) {
+    throw new LocationError('Konum Türkiye dışında görünüyor. Kayıtlı bir alışveriş konumu seç.')
+  }
   const accuracyM = pos.coords.accuracy ?? null
   const label = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 
@@ -57,6 +61,9 @@ export async function resolveBudgetLocation(
     const place = prefs.places.find((p) => p.id === prefs.savedId)
     if (!place) {
       throw new LocationError('Kayıtlı konum bulunamadı. Yeniden seç veya anlık konum kullan.')
+    }
+    if (!isValidTurkeyCoord(place.lat, place.lng)) {
+      throw new LocationError('Kayıtlı konum geçersiz. Haritadan veya açık adresle yeniden ekle.')
     }
     return {
       lat: place.lat,

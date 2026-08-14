@@ -1,35 +1,48 @@
 import { useEffect, useState } from 'react'
-import { searchPlaces } from '../lib/geocode'
+import {
+  DEFAULT_MAP_CENTER,
+  isValidTurkeyCoord,
+  reverseGeocode,
+  searchPlaces,
+} from '../lib/geocode'
 import { resolveLiveLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
 import type { GeocodeHit, LocationPreference, ShoppingLocation } from '../types/location'
+import { LocationMapFrame } from './LocationMapFrame'
 
 type Props = {
   prefs: LocationPreference
   onChange: (prefs: LocationPreference) => void
 }
 
+type AddMode = 'address' | 'map' | 'gps'
+
 export function LocationPicker({ prefs, onChange }: Props) {
   const [adding, setAdding] = useState(false)
+  const [addMode, setAddMode] = useState<AddMode>('address')
   const [name, setName] = useState('Ev')
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<GeocodeHit[]>([])
+  const [searching, setSearching] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [mapPin, setMapPin] = useState(DEFAULT_MAP_CENTER)
+  const [mapLabel, setMapLabel] = useState('Haritadan seçilen nokta')
 
   useEffect(() => {
-    if (!adding || query.trim().length < 2) {
-      setHits([])
-      return
-    }
+    if (!adding || addMode !== 'map') return
+    let cancelled = false
     const t = window.setTimeout(() => {
-      void searchPlaces(query)
-        .then(setHits)
-        .catch(() => setHits([]))
-    }, 350)
-    return () => window.clearTimeout(t)
-  }, [adding, query])
+      void reverseGeocode(mapPin.lat, mapPin.lng).then((hit) => {
+        if (!cancelled && hit) setMapLabel(hit.label)
+      })
+    }, 280)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [adding, addMode, mapPin.lat, mapPin.lng])
 
   function persist(next: LocationPreference) {
     locationPrefsStore.save(next)
@@ -55,6 +68,10 @@ export function LocationPicker({ prefs, onChange }: Props) {
   }
 
   function addPlace(place: Omit<ShoppingLocation, 'id' | 'createdAt'>) {
+    if (!isValidTurkeyCoord(place.lat, place.lng)) {
+      setErr('Seçilen nokta Türkiye dışında. Haritadan veya adresle yeniden dene.')
+      return
+    }
     const next: ShoppingLocation = {
       ...place,
       id: crypto.randomUUID(),
@@ -67,6 +84,26 @@ export function LocationPicker({ prefs, onChange }: Props) {
     setHits([])
     setMsg(`“${next.name}” kaydedildi ve seçildi.`)
     setErr(null)
+  }
+
+  async function runAddressSearch() {
+    const q = query.trim()
+    if (q.length < 3) {
+      setErr('En az 3 karakterlik açık adres yaz (mahalle, cadde, semt…).')
+      return
+    }
+    setSearching(true)
+    setErr(null)
+    try {
+      const found = await searchPlaces(q)
+      setHits(found)
+      if (found.length === 0) setErr('Adres bulunamadı. Daha açık yaz veya haritadan seç.')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Adres araması başarısız')
+      setHits([])
+    } finally {
+      setSearching(false)
+    }
   }
 
   async function saveCurrent() {
@@ -93,13 +130,35 @@ export function LocationPicker({ prefs, onChange }: Props) {
   }
 
   function saveHit(hit: GeocodeHit) {
-    const trimmed = name.trim() || hit.name
     addPlace({
-      name: trimmed,
+      name: name.trim() || hit.name,
       lat: hit.lat,
       lng: hit.lng,
       label: hit.label,
     })
+  }
+
+  function saveMapPin() {
+    addPlace({
+      name: name.trim() || 'Harita konumu',
+      lat: mapPin.lat,
+      lng: mapPin.lng,
+      label: mapLabel,
+    })
+  }
+
+  async function centerMapOnGps() {
+    setBusy(true)
+    setErr(null)
+    try {
+      const loc = await resolveLiveLocation()
+      setMapPin({ lat: loc.lat, lng: loc.lng })
+      setMapLabel(loc.label)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Konum alınamadı')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const selected = prefs.places.find((p) => p.id === prefs.savedId)
@@ -108,12 +167,20 @@ export function LocationPicker({ prefs, onChange }: Props) {
     <div className="loc-picker">
       <div className="loc-head">
         <span className="label">Alışveriş konumu</span>
-        <button type="button" className="btn-chip" onClick={() => setAdding((v) => !v)}>
+        <button
+          type="button"
+          className="btn-chip"
+          onClick={() => {
+            setAdding((v) => !v)
+            setErr(null)
+            setMsg(null)
+          }}
+        >
           {adding ? 'Kapat' : '+ Konum ekle'}
         </button>
       </div>
       <p className="loc-hint">
-        İşteyken eve göre hesaplamak için “Ev” kaydet; hesaplamada onu seç.
+        İşteyken eve göre hesapla: açık adres yaz veya haritadan pin koy, sonra “Ev” seç.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -142,7 +209,13 @@ export function LocationPicker({ prefs, onChange }: Props) {
       </div>
 
       {prefs.mode === 'saved' && selected ? (
-        <div className="banner ok">{selected.name}: {selected.label}</div>
+        <div className="banner ok">
+          {selected.name}: {selected.label}
+          <br />
+          <small>
+            {selected.lat.toFixed(5)}, {selected.lng.toFixed(5)}
+          </small>
+        </div>
       ) : (
         <div className="banner">Hesaplama cihazının anlık GPS konumuna göre yapılır.</div>
       )}
@@ -160,32 +233,99 @@ export function LocationPicker({ prefs, onChange }: Props) {
               placeholder="Ev, İş, Anne evi…"
             />
           </label>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={busy}
-            onClick={() => void saveCurrent()}
-          >
-            {busy ? 'Konum alınıyor…' : 'Şu anki konumumu kaydet'}
-          </button>
-          <label className="field">
-            <span>veya adres / semt ara</span>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Örn. Kadıköy, Çankaya…"
-            />
-          </label>
-          {hits.length > 0 ? (
-            <div className="loc-hits">
-              {hits.map((h) => (
-                <button key={h.id} type="button" className="loc-hit" onClick={() => saveHit(h)}>
-                  <strong>{h.name}</strong>
-                  <small>{h.label}</small>
-                </button>
-              ))}
-            </div>
+
+          <div className="filters loc-chips" role="tablist" aria-label="Ekleme yöntemi">
+            <button
+              type="button"
+              className={addMode === 'address' ? 'active' : ''}
+              onClick={() => setAddMode('address')}
+            >
+              Açık adres
+            </button>
+            <button
+              type="button"
+              className={addMode === 'map' ? 'active' : ''}
+              onClick={() => setAddMode('map')}
+            >
+              Harita
+            </button>
+            <button
+              type="button"
+              className={addMode === 'gps' ? 'active' : ''}
+              onClick={() => setAddMode('gps')}
+            >
+              Anlık GPS
+            </button>
+          </div>
+
+          {addMode === 'address' ? (
+            <>
+              <label className="field">
+                <span>Açık adres</span>
+                <textarea
+                  rows={3}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Örn. Caferağa Mah. Moda Cad. No:12 Kadıköy İstanbul"
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={searching}
+                onClick={() => void runAddressSearch()}
+              >
+                {searching ? 'Aranıyor…' : 'Adresi bul'}
+              </button>
+              {hits.length > 0 ? (
+                <div className="loc-hits">
+                  {hits.map((h) => (
+                    <button key={h.id} type="button" className="loc-hit" onClick={() => saveHit(h)}>
+                      <strong>{h.name}</strong>
+                      <small>{h.label}</small>
+                      <small>
+                        {h.lat.toFixed(5)}, {h.lng.toFixed(5)}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : null}
+
+          {addMode === 'map' ? (
+            <>
+              <LocationMapFrame
+                lat={mapPin.lat}
+                lng={mapPin.lng}
+                onPick={(coords) => setMapPin(coords)}
+              />
+              <div className="banner">{mapLabel}</div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => void centerMapOnGps()}
+              >
+                Haritayı anlık konuma getir
+              </button>
+              <button type="button" className="btn btn-primary" onClick={saveMapPin}>
+                Bu pin’i kaydet
+              </button>
+            </>
+          ) : null}
+
+          {addMode === 'gps' ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => void saveCurrent()}
+            >
+              {busy ? 'Konum alınıyor…' : 'Şu anki konumumu kaydet'}
+            </button>
+          ) : null}
+
           {prefs.places.length > 0 ? (
             <div className="loc-manage">
               {prefs.places.map((p) => (
@@ -194,7 +334,11 @@ export function LocationPicker({ prefs, onChange }: Props) {
                     <strong>{p.name}</strong>
                     <small>{p.label}</small>
                   </span>
-                  <button type="button" className="btn-chip danger-text" onClick={() => removePlace(p.id)}>
+                  <button
+                    type="button"
+                    className="btn-chip danger-text"
+                    onClick={() => removePlace(p.id)}
+                  >
                     Sil
                   </button>
                 </div>

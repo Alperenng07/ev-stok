@@ -54,7 +54,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
         latitude: loc.lat,
         longitude: loc.lng,
         locationLabel: loc.label,
-        distanceKm: 5,
+        distanceKm: 8,
       })
       setResult(next)
       setCache(next)
