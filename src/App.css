@@ -1286,22 +1286,36 @@ button {
   gap: 10px;
 }
 
+.loc-map-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.loc-map-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .loc-map {
   width: 100%;
-  height: 260px;
+  height: 280px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #e8ece5;
+  z-index: 0;
 }
 
-.loc-add textarea {
+.loc-add select,
+.loc-add textarea,
+.loc-add input {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
   background: #fff;
-  resize: vertical;
-  min-height: 72px;
   font: inherit;
+  width: 100%;
 }
 
 .loc-hits,

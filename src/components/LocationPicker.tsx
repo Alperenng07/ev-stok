@@ -3,10 +3,12 @@ import {
   DEFAULT_MAP_CENTER,
   isValidTurkeyCoord,
   reverseGeocode,
-  searchPlaces,
+  searchStructuredAddress,
+  type StructuredAddress,
 } from '../lib/geocode'
 import { resolveLiveLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
+import { TURKEY_PROVINCES } from '../lib/turkeyProvinces'
 import type { GeocodeHit, LocationPreference, ShoppingLocation } from '../types/location'
 import { LocationMapFrame } from './LocationMapFrame'
 
@@ -15,13 +17,21 @@ type Props = {
   onChange: (prefs: LocationPreference) => void
 }
 
-type AddMode = 'address' | 'map' | 'gps'
+type AddMode = 'form' | 'map' | 'gps'
+
+const EMPTY_ADDR: StructuredAddress = {
+  province: 'İstanbul',
+  district: '',
+  neighborhood: '',
+  street: '',
+  buildingNo: '',
+}
 
 export function LocationPicker({ prefs, onChange }: Props) {
   const [adding, setAdding] = useState(false)
-  const [addMode, setAddMode] = useState<AddMode>('address')
+  const [addMode, setAddMode] = useState<AddMode>('form')
   const [name, setName] = useState('Ev')
-  const [query, setQuery] = useState('')
+  const [addr, setAddr] = useState<StructuredAddress>(EMPTY_ADDR)
   const [hits, setHits] = useState<GeocodeHit[]>([])
   const [searching, setSearching] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -29,6 +39,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
   const [err, setErr] = useState<string | null>(null)
   const [mapPin, setMapPin] = useState(DEFAULT_MAP_CENTER)
   const [mapLabel, setMapLabel] = useState('Haritadan seçilen nokta')
+  const [mapKey, setMapKey] = useState(0)
 
   useEffect(() => {
     if (!adding || addMode !== 'map') return
@@ -69,7 +80,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
 
   function addPlace(place: Omit<ShoppingLocation, 'id' | 'createdAt'>) {
     if (!isValidTurkeyCoord(place.lat, place.lng)) {
-      setErr('Seçilen nokta Türkiye dışında. Haritadan veya adresle yeniden dene.')
+      setErr('Seçilen nokta Türkiye dışında. Yeniden dene.')
       return
     }
     const next: ShoppingLocation = {
@@ -77,30 +88,34 @@ export function LocationPicker({ prefs, onChange }: Props) {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     }
-    const places = [...prefs.places, next]
-    persist({ mode: 'saved', savedId: next.id, places })
+    persist({ mode: 'saved', savedId: next.id, places: [...prefs.places, next] })
     setAdding(false)
-    setQuery('')
     setHits([])
     setMsg(`“${next.name}” kaydedildi ve seçildi.`)
     setErr(null)
   }
 
-  async function runAddressSearch() {
-    const q = query.trim()
-    if (q.length < 3) {
-      setErr('En az 3 karakterlik açık adres yaz (mahalle, cadde, semt…).')
-      return
-    }
+  function setAddrField<K extends keyof StructuredAddress>(key: K, value: string) {
+    setAddr((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function runStructuredSearch() {
     setSearching(true)
     setErr(null)
+    setHits([])
     try {
-      const found = await searchPlaces(q)
+      const province = TURKEY_PROVINCES.find((p) => p.name === addr.province)
+      const found = await searchStructuredAddress(addr, province)
       setHits(found)
-      if (found.length === 0) setErr('Adres bulunamadı. Daha açık yaz veya haritadan seç.')
+      if (found.length === 0) {
+        setErr('Konum bulunamadı. İlçe/mahalle/sokak bilgisini kontrol et veya haritadan seç.')
+      } else if (found[0]) {
+        setMapPin({ lat: found[0].lat, lng: found[0].lng })
+        setMapLabel(found[0].label)
+        setMapKey((k) => k + 1)
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Adres araması başarısız')
-      setHits([])
     } finally {
       setSearching(false)
     }
@@ -108,7 +123,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
 
   async function saveCurrent() {
     const trimmed = name.trim()
-    if (trimmed.length < 1) {
+    if (!trimmed) {
       setErr('Konuma bir ad ver (ör. Ev, İş).')
       return
     }
@@ -116,12 +131,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
     setErr(null)
     try {
       const loc = await resolveLiveLocation()
-      addPlace({
-        name: trimmed,
-        lat: loc.lat,
-        lng: loc.lng,
-        label: loc.label,
-      })
+      addPlace({ name: trimmed, lat: loc.lat, lng: loc.lng, label: loc.label })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Konum alınamadı')
     } finally {
@@ -154,10 +164,20 @@ export function LocationPicker({ prefs, onChange }: Props) {
       const loc = await resolveLiveLocation()
       setMapPin({ lat: loc.lat, lng: loc.lng })
       setMapLabel(loc.label)
+      setMapKey((k) => k + 1)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Konum alınamadı')
     } finally {
       setBusy(false)
+    }
+  }
+
+  function onProvinceChange(provinceName: string) {
+    setAddrField('province', provinceName)
+    const province = TURKEY_PROVINCES.find((p) => p.name === provinceName)
+    if (province) {
+      setMapPin({ lat: province.lat, lng: province.lng })
+      setMapKey((k) => k + 1)
     }
   }
 
@@ -180,7 +200,8 @@ export function LocationPicker({ prefs, onChange }: Props) {
         </button>
       </div>
       <p className="loc-hint">
-        İşteyken eve göre hesapla: açık adres yaz veya haritadan pin koy, sonra “Ev” seç.
+        İl → ilçe → mahalle → sokak ile ekle; istersen haritadan pin koy. Sonra hesaplamada “Ev”
+        seç.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -237,10 +258,10 @@ export function LocationPicker({ prefs, onChange }: Props) {
           <div className="filters loc-chips" role="tablist" aria-label="Ekleme yöntemi">
             <button
               type="button"
-              className={addMode === 'address' ? 'active' : ''}
-              onClick={() => setAddMode('address')}
+              className={addMode === 'form' ? 'active' : ''}
+              onClick={() => setAddMode('form')}
             >
-              Açık adres
+              İl / İlçe / Sokak
             </button>
             <button
               type="button"
@@ -258,24 +279,60 @@ export function LocationPicker({ prefs, onChange }: Props) {
             </button>
           </div>
 
-          {addMode === 'address' ? (
+          {addMode === 'form' ? (
             <>
               <label className="field">
-                <span>Açık adres</span>
-                <textarea
-                  rows={3}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Örn. Caferağa Mah. Moda Cad. No:12 Kadıköy İstanbul"
+                <span>İl *</span>
+                <select
+                  value={addr.province}
+                  onChange={(e) => onProvinceChange(e.target.value)}
+                >
+                  {TURKEY_PROVINCES.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>İlçe *</span>
+                <input
+                  value={addr.district}
+                  onChange={(e) => setAddrField('district', e.target.value)}
+                  placeholder="Örn. Kadıköy"
+                />
+              </label>
+              <label className="field">
+                <span>Mahalle</span>
+                <input
+                  value={addr.neighborhood}
+                  onChange={(e) => setAddrField('neighborhood', e.target.value)}
+                  placeholder="Örn. Caferağa"
+                />
+              </label>
+              <label className="field">
+                <span>Sokak / Cadde</span>
+                <input
+                  value={addr.street}
+                  onChange={(e) => setAddrField('street', e.target.value)}
+                  placeholder="Örn. Moda Caddesi"
+                />
+              </label>
+              <label className="field">
+                <span>Kapı no</span>
+                <input
+                  value={addr.buildingNo}
+                  onChange={(e) => setAddrField('buildingNo', e.target.value)}
+                  placeholder="Örn. 12"
                 />
               </label>
               <button
                 type="button"
                 className="btn btn-secondary"
                 disabled={searching}
-                onClick={() => void runAddressSearch()}
+                onClick={() => void runStructuredSearch()}
               >
-                {searching ? 'Aranıyor…' : 'Adresi bul'}
+                {searching ? 'Aranıyor…' : 'Konumu bul'}
               </button>
               {hits.length > 0 ? (
                 <div className="loc-hits">
@@ -298,6 +355,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
               <LocationMapFrame
                 lat={mapPin.lat}
                 lng={mapPin.lng}
+                resetKey={mapKey}
                 onPick={(coords) => setMapPin(coords)}
               />
               <div className="banner">{mapLabel}</div>
