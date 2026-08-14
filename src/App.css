@@ -1253,3 +1253,67 @@ button {
   margin: 6px 0 0;
   color: var(--muted);
 }
+
+.loc-picker {
+  margin: 4px 0 14px;
+}
+
+.loc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.loc-hint {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.loc-chips {
+  margin-bottom: 8px;
+}
+
+.loc-add {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  display: grid;
+  gap: 10px;
+}
+
+.loc-hits,
+.loc-manage {
+  display: grid;
+  gap: 6px;
+}
+
+.loc-hit,
+.loc-manage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.loc-hit {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.loc-hit small,
+.loc-manage-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}

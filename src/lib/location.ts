@@ -1,3 +1,5 @@
+import type { LocationPreference } from '../types/location'
+
 export type UserLocation = {
   lat: number
   lng: number
@@ -45,6 +47,25 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
   const label = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 
   return { lat, lng, label, accuracyM }
+}
+
+/** Bütçe hesabı için seçili kaynağı çözümler (anlık veya kayıtlı). */
+export async function resolveBudgetLocation(
+  prefs: LocationPreference,
+): Promise<UserLocation> {
+  if (prefs.mode === 'saved' && prefs.savedId) {
+    const place = prefs.places.find((p) => p.id === prefs.savedId)
+    if (!place) {
+      throw new LocationError('Kayıtlı konum bulunamadı. Yeniden seç veya anlık konum kullan.')
+    }
+    return {
+      lat: place.lat,
+      lng: place.lng,
+      label: `${place.name} · ${place.label}`,
+      accuracyM: null,
+    }
+  }
+  return resolveLiveLocation()
 }
 
 export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { LocationPicker } from './LocationPicker'
 import { useBudgetCache } from '../context/BudgetCacheContext'
 import { buildLiveBudgetPlans, formatTry } from '../lib/budgetPlanner'
 import { chainById } from '../lib/chains'
-import { resolveLiveLocation } from '../lib/location'
+import { resolveBudgetLocation } from '../lib/location'
+import { locationPrefsStore } from '../lib/locationPrefsStore'
 import type { StockItem } from '../types'
 import type { BudgetPlan, BudgetResult } from '../types/budget'
+import type { LocationPreference } from '../types/location'
 
 type Props = {
   items: StockItem[]
@@ -16,6 +19,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   const { result: cached, setResult: setCache, hasCache, calculatedAt } = useBudgetCache()
   const pending = useMemo(() => items.filter((i) => !i.purchased), [items])
 
+  const [locPrefs, setLocPrefs] = useState<LocationPreference>(() => locationPrefsStore.load())
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<BudgetResult | null>(cached)
   const [selectedId, setSelectedId] = useState<string | null>(cached?.plans[0]?.id ?? null)
@@ -35,9 +39,13 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     }
     setLoading(true)
     setError(null)
-    setStatus('Anlık konum alınıyor…')
+    setStatus(
+      locPrefs.mode === 'saved'
+        ? 'Kayıtlı konum yükleniyor…'
+        : 'Anlık konum alınıyor…',
+    )
     try {
-      const loc = await resolveLiveLocation()
+      const loc = await resolveBudgetLocation(locPrefs)
       setStatus(
         `Konum: ${loc.label} — marketfiyati.org.tr’den ${pending.length} ürün için canlı fiyat çekiliyor…`,
       )
@@ -62,7 +70,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [pending, setCache])
+  }, [pending, setCache, locPrefs])
 
   useEffect(() => {
     if (autostart && !autoStarted.current && !loading) {
@@ -85,6 +93,8 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
       <p className="panel-sub">
         Bir kez hesapla; listeden ürünü “Alındı” yapıp market seçince tasarruf bilançoya yazılır.
       </p>
+
+      <LocationPicker prefs={locPrefs} onChange={setLocPrefs} />
 
       <div className="panel-row">
         <span className="meta">{pending.length} alınacak ürün</span>
