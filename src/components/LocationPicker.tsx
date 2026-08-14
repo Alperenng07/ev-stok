@@ -336,8 +336,8 @@ export function LocationPicker({ prefs, onChange }: Props) {
         </button>
       </div>
       <p className="loc-hint">
-        İl → ilçe → mahalle → sokak seç, çıkan sonuçlardan doğru olanı seç. Sonuçta ilçe adı ve
-        koordinat görünmeli; yanlış ilçeyse kaydetme.
+        İlçe seçtikten sonra sonuçlar sadece o ilçe içinde aranır. Listede Kadıköy/Moda gibi başka
+        ilçe görürsen kaydetme — yanlış sonuçtur.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
