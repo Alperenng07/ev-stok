@@ -1,5 +1,5 @@
 import type { LocationPreference } from '../types/location'
-import { isValidTurkeyCoord } from './geocode'
+import { isValidTurkeyCoord, reverseGeocode } from './geocode'
 
 export type UserLocation = {
   lat: number
@@ -64,7 +64,10 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
     )
   }
   const accuracyM = pos.coords.accuracy ?? null
-  const label = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  const reversed = await reverseGeocode(lat, lng)
+  const label = reversed?.label
+    ? `${reversed.label} (${lat.toFixed(5)}, ${lng.toFixed(5)})`
+    : `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 
   return { lat, lng, label, accuracyM }
 }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   formatAddressLabel,
+  hitMatchesRegion,
   isValidTurkeyCoord,
+  resolveDistrictBias,
   searchStreetSuggestions,
   searchStructuredAddress,
   type StructuredAddress,
@@ -68,6 +70,24 @@ export function LocationPicker({ prefs, onChange }: Props) {
     }
     return undefined
   }, [province])
+
+  const [districtBias, setDistrictBias] = useState<{ lat: number; lng: number } | undefined>()
+
+  useEffect(() => {
+    if (!province || !district) {
+      setDistrictBias(undefined)
+      return
+    }
+    let cancelled = false
+    void resolveDistrictBias(province.name, district.name).then((b) => {
+      if (!cancelled) setDistrictBias(b ?? undefined)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [province, district])
+
+  const searchBias = districtBias ?? bias
 
   useEffect(() => {
     let cancelled = false
@@ -143,7 +163,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
               district: district.name,
               neighborhood: neighborhood?.name ?? neighborhoodQuery,
             },
-            bias,
+            searchBias,
           )
           setStreetHits(hits)
         } catch {
@@ -152,7 +172,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
       })()
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [street, province, district, neighborhood, neighborhoodQuery, bias])
+  }, [street, province, district, neighborhood, neighborhoodQuery, searchBias])
 
   function persist(next: LocationPreference) {
     locationPrefsStore.save(next)
@@ -227,31 +247,34 @@ export function LocationPicker({ prefs, onChange }: Props) {
     setShowPermissionHelp(false)
     try {
       if (hit) {
+        // Öneri seçildi: yine de ilçe doğrula
+        if (!hitMatchesRegion(hit, parts.province, parts.district)) {
+          setErr(
+            `Bu sonuç seçilen ilçeyle uyuşmuyor (${parts.district}). Listeden doğru sokak/konumu seç.`,
+          )
+          return
+        }
         addPlace({
           name: name.trim() || 'Ev',
           lat: hit.lat,
           lng: hit.lng,
-          label: formatAddressLabel(parts),
+          label: `${formatAddressLabel(parts)} · ${hit.label}`,
         })
         return
       }
-      const hits = await searchStructuredAddress(parts, bias)
+      const hits = await searchStructuredAddress(parts, searchBias)
       if (hits.length === 0) {
         setErr('Bu adres bulunamadı. Mahalle veya sokak adını kontrol edip tekrar dene.')
         setResolveHits([])
         return
       }
-      if (hits.length === 1) {
-        addPlace({
-          name: name.trim() || 'Ev',
-          lat: hits[0].lat,
-          lng: hits[0].lng,
-          label: formatAddressLabel(parts),
-        })
-        return
-      }
+      // Her zaman kullanıcıya göster — yanlış ilçeye otomatik kaydetme
       setResolveHits(hits)
-      setMsg('Birden fazla sonuç var — listeden doğru olanı seç.')
+      setMsg(
+        hits.length === 1
+          ? 'Bulunan konumu kontrol edip seç (ilçe doğru mu?).'
+          : 'Birden fazla sonuç var — doğru olanı seç (ilçene bak).',
+      )
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Adres bulunamadı')
     } finally {
@@ -313,8 +336,8 @@ export function LocationPicker({ prefs, onChange }: Props) {
         </button>
       </div>
       <p className="loc-hint">
-        İl → ilçe → mahalle → sokak seçerek kaydet. Listeler Türkiye adres verisinden gelir; sokak
-        önerileri otomatik bulunur.
+        İl → ilçe → mahalle → sokak seç, çıkan sonuçlardan doğru olanı seç. Sonuçta ilçe adı ve
+        koordinat görünmeli; yanlış ilçeyse kaydetme.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -512,7 +535,11 @@ export function LocationPicker({ prefs, onChange }: Props) {
                       }}
                     >
                       <strong>{hit.name}</strong>
-                      <small>{hit.label}</small>
+                      <small>
+                        {hit.label}
+                        <br />
+                        {hit.lat.toFixed(5)}, {hit.lng.toFixed(5)}
+                      </small>
                     </button>
                   ))}
                 </div>
@@ -528,7 +555,11 @@ export function LocationPicker({ prefs, onChange }: Props) {
                       onClick={() => void findAndSave(hit)}
                     >
                       <strong>{hit.name}</strong>
-                      <small>{hit.label}</small>
+                      <small>
+                        {hit.label}
+                        <br />
+                        {hit.lat.toFixed(5)}, {hit.lng.toFixed(5)} — dokununca kaydet
+                      </small>
                     </button>
                   ))}
                 </div>
