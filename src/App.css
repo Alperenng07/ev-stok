@@ -1332,10 +1332,18 @@ button {
   width: 100%;
 }
 
+.loc-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .loc-hits,
 .loc-manage {
   display: grid;
   gap: 6px;
+  max-height: 220px;
+  overflow: auto;
 }
 
 .loc-hit,
@@ -1354,6 +1362,13 @@ button {
 .loc-hit {
   flex-direction: column;
   align-items: flex-start;
+  cursor: pointer;
+  width: 100%;
+}
+
+.loc-hit.active {
+  border-color: var(--brand, #2f6b4f);
+  background: #eaf2ee;
 }
 
 .loc-hit small,
