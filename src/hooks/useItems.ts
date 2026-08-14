@@ -7,7 +7,7 @@ import {
   supabase,
   upsertItem,
 } from '../lib/supabase'
-import type { FilterId, ItemDraft, StockItem } from '../types'
+import type { FilterId, ItemDraft, PurchasePlace, StockItem } from '../types'
 
 function createItem(draft: ItemDraft, householdId: string): StockItem {
   const now = new Date().toISOString()
@@ -21,19 +21,23 @@ function createItem(draft: ItemDraft, householdId: string): StockItem {
     dueDate: draft.dueDate,
     renewalDays: draft.renewalDays,
     purchased: false,
+    purchasedPlaceId: null,
+    purchasedPlaceLabel: null,
     notes: draft.notes.trim(),
     createdAt: now,
     updatedAt: now,
   }
 }
 
-function withPurchasedToggle(item: StockItem): StockItem {
+function withPurchasedToggle(item: StockItem, place?: PurchasePlace): StockItem {
   const now = new Date().toISOString()
   if (!item.purchased) {
     const renewal = item.renewalDays && item.renewalDays > 0 ? item.renewalDays : null
     return {
       ...item,
       purchased: true,
+      purchasedPlaceId: place?.placeId ?? null,
+      purchasedPlaceLabel: place?.placeLabel ?? null,
       currentQty: item.currentQty + item.neededQty,
       dueDate: renewal ? addDays(todayISO(), renewal) : item.dueDate,
       updatedAt: now,
@@ -42,6 +46,8 @@ function withPurchasedToggle(item: StockItem): StockItem {
   return {
     ...item,
     purchased: false,
+    purchasedPlaceId: null,
+    purchasedPlaceLabel: null,
     updatedAt: now,
   }
 }
@@ -173,16 +179,14 @@ export function useItems(householdId: string | null) {
   }, [])
 
   const togglePurchased = useCallback(
-    (id: string) => {
-      setItems((prev) => {
-        const current = prev.find((item) => item.id === id)
-        if (!current) return prev
-        const next = withPurchasedToggle(current)
-        void persist(next)
-        return prev.map((item) => (item.id === id ? next : item))
-      })
+    async (id: string, place?: PurchasePlace) => {
+      const current = items.find((item) => item.id === id)
+      if (!current) return
+      const next = withPurchasedToggle(current, place)
+      setItems((prev) => prev.map((item) => (item.id === id ? next : item)))
+      await persist(next)
     },
-    [persist],
+    [items, persist],
   )
 
   const filtered = useMemo(() => {

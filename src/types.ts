@@ -5,6 +5,15 @@ export type Household = {
   createdAt: string
 }
 
+export type HouseholdMember = {
+  householdId: string
+  userId: string
+  role: 'owner' | 'member'
+  displayName: string
+  email: string
+  joinedAt: string
+}
+
 export type StockItem = {
   id: string
   householdId: string
@@ -15,6 +24,8 @@ export type StockItem = {
   dueDate: string
   renewalDays: number | null
   purchased: boolean
+  purchasedPlaceId: string | null
+  purchasedPlaceLabel: string | null
   notes: string
   createdAt: string
   updatedAt: string
@@ -31,3 +42,10 @@ export type ItemDraft = {
 }
 
 export type FilterId = 'all' | 'pending' | 'done' | 'overdue'
+
+export type PurchasePlace = {
+  placeId: string
+  placeLabel: string
+}
+
+export type AppTab = 'list' | 'budget' | 'reports' | 'family' | 'profile'

@@ -55,6 +55,12 @@ export function ItemRow({ item, onToggle, onEdit }: Props) {
               <span>Her {item.renewalDays} gün</span>
             </>
           ) : null}
+          {item.purchased && item.purchasedPlaceLabel ? (
+            <>
+              <span className="dot-sep" aria-hidden />
+              <span>{item.purchasedPlaceLabel}</span>
+            </>
+          ) : null}
         </div>
         {item.notes ? <p className="item-notes">{item.notes}</p> : null}
       </button>

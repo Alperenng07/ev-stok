@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { Household, StockItem } from '../types'
+import type { Household, HouseholdMember, StockItem } from '../types'
 
 export type DbItem = {
   id: string
@@ -11,6 +11,8 @@ export type DbItem = {
   due_date: string
   renewal_days: number | null
   purchased: boolean
+  purchased_place_id?: string | null
+  purchased_place_label?: string | null
   notes: string
   created_at: string
   updated_at: string
@@ -21,6 +23,15 @@ type DbHousehold = {
   name: string
   invite_code: string
   created_at: string
+}
+
+type DbMember = {
+  household_id: string
+  user_id: string
+  role: string | null
+  display_name: string | null
+  email: string | null
+  joined_at: string
 }
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -38,6 +49,30 @@ export const supabase: SupabaseClient | null = isCloudEnabled
   : null
 
 const ACTIVE_HOUSEHOLD_KEY = 'ev-stok-active-household'
+const PROFILE_KEY = 'ev-stok-profile'
+
+export type LocalProfile = {
+  displayName: string
+  email: string
+}
+
+export function getLocalProfile(): LocalProfile {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY)
+    if (!raw) return { displayName: '', email: '' }
+    const parsed = JSON.parse(raw) as Partial<LocalProfile>
+    return {
+      displayName: parsed.displayName ?? '',
+      email: parsed.email ?? '',
+    }
+  } catch {
+    return { displayName: '', email: '' }
+  }
+}
+
+export function setLocalProfile(profile: LocalProfile): void {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+}
 
 export function getActiveHouseholdId(): string | null {
   try {
@@ -69,6 +104,17 @@ function toHousehold(row: DbHousehold): Household {
   }
 }
 
+function toMember(row: DbMember): HouseholdMember {
+  return {
+    householdId: row.household_id,
+    userId: row.user_id,
+    role: row.role === 'owner' ? 'owner' : 'member',
+    displayName: row.display_name?.trim() || 'Üye',
+    email: row.email ?? '',
+    joinedAt: row.joined_at,
+  }
+}
+
 export function toStockItem(row: DbItem): StockItem {
   return {
     id: row.id,
@@ -83,6 +129,8 @@ export function toStockItem(row: DbItem): StockItem {
         ? null
         : Number(row.renewal_days),
     purchased: Boolean(row.purchased),
+    purchasedPlaceId: row.purchased_place_id ?? null,
+    purchasedPlaceLabel: row.purchased_place_label ?? null,
     notes: row.notes ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -100,6 +148,8 @@ export function toDbItem(item: StockItem): DbItem {
     due_date: item.dueDate,
     renewal_days: item.renewalDays,
     purchased: item.purchased,
+    purchased_place_id: item.purchasedPlaceId,
+    purchased_place_label: item.purchasedPlaceLabel,
     notes: item.notes,
     created_at: item.createdAt,
     updated_at: item.updatedAt,
@@ -112,6 +162,12 @@ export async function ensureAuth(): Promise<void> {
   if (data.session) return
   const { error } = await supabase.auth.signInAnonymously()
   if (error) throw error
+}
+
+export async function getCurrentUserId(): Promise<string | null> {
+  if (!supabase) return null
+  const { data } = await supabase.auth.getUser()
+  return data.user?.id ?? null
 }
 
 export async function listMyHouseholds(): Promise<Household[]> {
@@ -130,7 +186,16 @@ export async function createHousehold(name: string): Promise<Household> {
     p_name: name.trim(),
   })
   if (error) throw error
-  return toHousehold(data as DbHousehold)
+  const household = toHousehold(data as DbHousehold)
+  const profile = getLocalProfile()
+  if (profile.displayName || profile.email) {
+    try {
+      await updateMyMemberProfile(household.id, profile)
+    } catch {
+      /* migration henüz uygulanmamış olabilir */
+    }
+  }
+  return household
 }
 
 export async function joinHousehold(code: string): Promise<Household> {
@@ -139,7 +204,62 @@ export async function joinHousehold(code: string): Promise<Household> {
     p_code: code.trim().toUpperCase(),
   })
   if (error) throw error
-  return toHousehold(data as DbHousehold)
+  const household = toHousehold(data as DbHousehold)
+  const profile = getLocalProfile()
+  if (profile.displayName || profile.email) {
+    try {
+      await updateMyMemberProfile(household.id, profile)
+    } catch {
+      /* ignore */
+    }
+  }
+  return household
+}
+
+export async function listHouseholdMembers(
+  householdId: string,
+): Promise<HouseholdMember[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('household_id,user_id,role,display_name,email,joined_at')
+    .eq('household_id', householdId)
+    .order('joined_at', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as DbMember[]).map(toMember)
+}
+
+export async function removeHouseholdMember(
+  householdId: string,
+  userId: string,
+): Promise<void> {
+  if (!supabase) throw new Error('Bulut bağlı değil')
+  const { error } = await supabase.rpc('remove_household_member', {
+    p_household_id: householdId,
+    p_user_id: userId,
+  })
+  if (error) throw error
+}
+
+export async function leaveHousehold(householdId: string): Promise<void> {
+  if (!supabase) throw new Error('Bulut bağlı değil')
+  const { error } = await supabase.rpc('leave_household', {
+    p_household_id: householdId,
+  })
+  if (error) throw error
+}
+
+export async function updateMyMemberProfile(
+  householdId: string,
+  profile: LocalProfile,
+): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.rpc('update_my_member_profile', {
+    p_household_id: householdId,
+    p_display_name: profile.displayName.trim() || 'Üye',
+    p_email: profile.email.trim(),
+  })
+  if (error) throw error
 }
 
 export async function fetchItems(householdId: string): Promise<StockItem[]> {
