@@ -3,7 +3,7 @@ import { LocationPicker } from './LocationPicker'
 import { useBudgetCache } from '../context/BudgetCacheContext'
 import { applyCatalogChoice, buildLiveBudgetPlans, formatTry } from '../lib/budgetPlanner'
 import { chainById } from '../lib/chains'
-import { LocationError, resolveBudgetLocation } from '../lib/location'
+import { budgetLocationKey, LocationError, resolveBudgetLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
 import {
   getLocationPermissionGuide,
@@ -20,13 +20,18 @@ type Props = {
 }
 
 export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
-  const { result: cached, setResult: setCache, hasCache, calculatedAt } = useBudgetCache()
+  const { result: cached, setResult: setCache, hasCacheFor, calculatedAt } = useBudgetCache()
   const pending = useMemo(() => items.filter((i) => !i.purchased), [items])
 
   const [locPrefs, setLocPrefs] = useState<LocationPreference>(() => locationPrefsStore.load())
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<BudgetResult | null>(cached)
-  const [selectedId, setSelectedId] = useState<string | null>(cached?.plans[0]?.id ?? null)
+  const initialKey = budgetLocationKey(locationPrefsStore.load())
+  const [result, setResult] = useState<BudgetResult | null>(
+    cached?.locationKey === initialKey ? cached : null,
+  )
+  const [selectedId, setSelectedId] = useState<string | null>(
+    cached?.locationKey === initialKey ? (cached.plans[0]?.id ?? null) : null,
+  )
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [needPermissionHelp, setNeedPermissionHelp] = useState(false)
@@ -35,63 +40,69 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   const lastLocKey = useRef<string | null>(null)
   const permissionGuide = getLocationPermissionGuide()
 
-  const locationKey =
-    locPrefs.mode === 'saved' && locPrefs.savedId
-      ? (() => {
-          const place = locPrefs.places.find((p) => p.id === locPrefs.savedId)
-          return place
-            ? `saved:${place.id}:${place.lat.toFixed(5)},${place.lng.toFixed(5)}`
-            : `saved:${locPrefs.savedId}`
-        })()
-      : 'live'
+  const locationKey = budgetLocationKey(locPrefs)
+  const hasCache = hasCacheFor(locationKey)
+
+  /** Sadece seçili adresin sonucu; eski Ev/İş hesabı asla gösterilmez. */
+  const activeResult = result?.locationKey === locationKey ? result : null
 
   const selected: BudgetPlan | null =
-    result?.plans.find((p) => p.id === selectedId) ?? result?.plans[0] ?? null
+    activeResult?.plans.find((p) => p.id === selectedId) ?? activeResult?.plans[0] ?? null
 
-  const runPlanner = useCallback(async (prefsOverride?: LocationPreference) => {
-    const activePrefs = prefsOverride ?? locPrefs
-    if (pending.length === 0) {
-      setError('Alınacak ürün yok. Önce listeye ürün ekle.')
+  const runPlanner = useCallback(
+    async (prefsOverride?: LocationPreference) => {
+      const activePrefs = prefsOverride ?? locPrefs
+      const key = budgetLocationKey(activePrefs)
+      lastLocKey.current = key
+
+      // Eski konumun (İş vb.) sonucunu hemen kaldır
       setResult(null)
       setCache(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    setNeedPermissionHelp(false)
-    setStatus(
-      activePrefs.mode === 'saved'
-        ? 'Kayıtlı konum yükleniyor…'
-        : 'Anlık konum alınıyor…',
-    )
-    try {
-      const loc = await resolveBudgetLocation(activePrefs)
-      setStatus(
-        `Konum: ${loc.label} — marketfiyati.org.tr’den ${pending.length} ürün için canlı fiyat çekiliyor…`,
-      )
-      const next = await buildLiveBudgetPlans({
-        pendingItems: pending,
-        latitude: loc.lat,
-        longitude: loc.lng,
-        locationLabel: loc.label,
-        distanceKm: 8,
-      })
-      setResult(next)
-      setCache(next)
-      setSelectedId(next.plans[0]?.id ?? null)
-      setStatus(null)
-      if (next.plans.length === 0) {
-        setError('Yakındaki marketlerde bu ürünler için fiyat bulunamadı.')
+      setSelectedId(null)
+      setPickItemId(null)
+
+      if (pending.length === 0) {
+        setError('Alınacak ürün yok. Önce listeye ürün ekle.')
+        return
       }
-    } catch (err) {
-      setResult(null)
-      setError(err instanceof Error ? err.message : 'Plan oluşturulamadı')
-      setNeedPermissionHelp(err instanceof LocationError && err.code === 'permission')
-      setStatus(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [pending, setCache, locPrefs])
+      setLoading(true)
+      setError(null)
+      setNeedPermissionHelp(false)
+      setStatus(
+        activePrefs.mode === 'saved' ? 'Kayıtlı konum yükleniyor…' : 'Anlık konum alınıyor…',
+      )
+      try {
+        const loc = await resolveBudgetLocation(activePrefs)
+        setStatus(
+          `Konum: ${loc.label} — marketfiyati.org.tr’den ${pending.length} ürün için canlı fiyat çekiliyor…`,
+        )
+        const next = await buildLiveBudgetPlans({
+          pendingItems: pending,
+          latitude: loc.lat,
+          longitude: loc.lng,
+          locationLabel: loc.label,
+          locationKey: key,
+          distanceKm: 8,
+        })
+        setResult(next)
+        setCache(next)
+        setSelectedId(next.plans[0]?.id ?? null)
+        setStatus(null)
+        if (next.plans.length === 0) {
+          setError('Yakındaki marketlerde bu ürünler için fiyat bulunamadı.')
+        }
+      } catch (err) {
+        setResult(null)
+        setCache(null)
+        setError(err instanceof Error ? err.message : 'Plan oluşturulamadı')
+        setNeedPermissionHelp(err instanceof LocationError && err.code === 'permission')
+        setStatus(null)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [pending, setCache, locPrefs],
+  )
 
   useEffect(() => {
     if (autostart && !autoStarted.current && !loading) {
@@ -103,13 +114,13 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   }, [autostart, loading, runPlanner, onAutostartConsumed, locationKey])
 
   useEffect(() => {
-    if (cached && !result) {
+    if (cached && !result && cached.locationKey === locationKey) {
       setResult(cached)
       setSelectedId(cached.plans[0]?.id ?? null)
     }
-  }, [cached, result])
+  }, [cached, result, locationKey])
 
-  // Konum değişince eski cache’i temizle (hesap seçim/buton ile tetiklenir)
+  // Konum değişince eski cache’i temizle
   useEffect(() => {
     if (lastLocKey.current === null) {
       lastLocKey.current = locationKey
@@ -120,12 +131,14 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     setResult(null)
     setCache(null)
     setSelectedId(null)
+    setPickItemId(null)
     setError(null)
+    setStatus(null)
   }, [locationKey, setCache])
 
   function chooseCatalog(itemId: string, catalogId: string) {
-    if (!result) return
-    const next = applyCatalogChoice(result, itemId, catalogId)
+    if (!activeResult) return
+    const next = applyCatalogChoice(activeResult, itemId, catalogId)
     setResult(next)
     setCache(next)
     setSelectedId((prev) => next.plans.find((p) => p.id === prev)?.id ?? next.plans[0]?.id ?? null)
@@ -143,15 +156,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
         prefs={locPrefs}
         onChange={setLocPrefs}
         onUseLocation={(nextPrefs) => {
-          const place =
-            nextPrefs.mode === 'saved' && nextPrefs.savedId
-              ? nextPrefs.places.find((p) => p.id === nextPrefs.savedId)
-              : null
-          lastLocKey.current = place
-            ? `saved:${place.id}:${place.lat.toFixed(5)},${place.lng.toFixed(5)}`
-            : nextPrefs.mode === 'saved' && nextPrefs.savedId
-              ? `saved:${nextPrefs.savedId}`
-              : 'live'
+          lastLocKey.current = budgetLocationKey(nextPrefs)
           setLocPrefs(nextPrefs)
           void runPlanner(nextPrefs)
         }}
@@ -217,19 +222,19 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
         </div>
       ) : null}
 
-      {result ? (
+      {activeResult ? (
         <div className="budget-body">
           <div className="banner ok">
-            Konum: {result.locationLabel} ({result.location.lat.toFixed(4)},{' '}
-            {result.location.lng.toFixed(4)})
+            Konum: {activeResult.locationLabel} ({activeResult.location.lat.toFixed(4)},{' '}
+            {activeResult.location.lng.toFixed(4)})
           </div>
-          <div className="banner">{result.disclaimer}</div>
+          <div className="banner">{activeResult.disclaimer}</div>
 
           <h3 className="section-h">Ürün eşleşmeleri</h3>
           <p className="panel-sub match-hint">
             Otomatik seçim yanlışsa “Başka ürün seç” ile Nutella / Yumoş vb. yerine doğru ürünü seç.
           </p>
-          {result.lines.map((line) => {
+          {activeResult.lines.map((line) => {
             const candidates = line.candidates ?? []
             const open = pickItemId === line.itemId
             const alts = candidates.filter((c) => c.catalogId !== line.catalogId)
@@ -247,7 +252,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
                         : ''}
                     </small>
                   </div>
-                  {(alts.length > 0 || (!line.matched && candidates.length > 0)) ? (
+                  {alts.length > 0 || (!line.matched && candidates.length > 0) ? (
                     <button
                       type="button"
                       className="btn-chip"
@@ -285,19 +290,21 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
             )
           })}
 
-          {result.potentialSaving > 0 ? (
+          {activeResult.potentialSaving > 0 ? (
             <div className="saving-card">
               <span className="saving-label">Potansiyel tasarruf</span>
-              <strong className="saving-value">{formatTry(result.potentialSaving)} kar edebilirsin</strong>
+              <strong className="saving-value">
+                {formatTry(activeResult.potentialSaving)} kar edebilirsin
+              </strong>
               <span className="saving-hint">
-                En pahalı tek-zincire göre ({formatTry(result.worstSingleTotal)}) en ucuz plan (
-                {formatTry(result.bestTotal)}).
+                En pahalı tek-zincire göre ({formatTry(activeResult.worstSingleTotal)}) en ucuz plan (
+                {formatTry(activeResult.bestTotal)}).
               </span>
             </div>
           ) : null}
 
           <h3 className="section-h">Önerilen planlar</h3>
-          {result.plans.map((plan) => {
+          {activeResult.plans.map((plan) => {
             const active = selected?.id === plan.id
             const chainColor = plan.chainId ? chainById(plan.chainId).color : 'var(--moss)'
             return (

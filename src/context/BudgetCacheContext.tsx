@@ -13,7 +13,11 @@ type BudgetCacheValue = {
   calculatedAt: string | null
   setResult: (result: BudgetResult | null) => void
   getLineForItem: (itemId: string) => PricedLine | null
+  /** Cache var mı (konum filtresi yok). */
   hasCache: boolean
+  /** Sadece verilen alışveriş konumuna ait cache. */
+  hasCacheFor: (locationKey: string) => boolean
+  getLineForItemAt: (itemId: string, locationKey: string) => PricedLine | null
 }
 
 const BudgetCacheContext = createContext<BudgetCacheValue | null>(null)
@@ -32,6 +36,20 @@ export function BudgetCacheProvider({ children }: { children: ReactNode }) {
     [result],
   )
 
+  const hasCacheFor = useCallback(
+    (locationKey: string) =>
+      Boolean(result && result.locationKey === locationKey && result.lines.length > 0),
+    [result],
+  )
+
+  const getLineForItemAt = useCallback(
+    (itemId: string, locationKey: string) => {
+      if (!result || result.locationKey !== locationKey) return null
+      return result.lines.find((l) => l.itemId === itemId) ?? null
+    },
+    [result],
+  )
+
   const value = useMemo(
     () => ({
       result,
@@ -39,8 +57,10 @@ export function BudgetCacheProvider({ children }: { children: ReactNode }) {
       setResult,
       getLineForItem,
       hasCache: Boolean(result && result.lines.length > 0),
+      hasCacheFor,
+      getLineForItemAt,
     }),
-    [result, calculatedAt, setResult, getLineForItem],
+    [result, calculatedAt, setResult, getLineForItem, hasCacheFor, getLineForItemAt],
   )
 
   return <BudgetCacheContext.Provider value={value}>{children}</BudgetCacheContext.Provider>

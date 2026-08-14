@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BudgetPanel } from './components/BudgetPanel'
 import { FamilyBar } from './components/FamilyBar'
 import { FamilyPanel } from './components/FamilyPanel'
@@ -15,6 +15,8 @@ import { HouseholdProvider, useHouseholdContext } from './context/HouseholdConte
 import { SavingsProvider, useSavings } from './context/SavingsContext'
 import { useItems } from './hooks/useItems'
 import { formatTry } from './lib/budgetPlanner'
+import { budgetLocationKey } from './lib/location'
+import { locationPrefsStore } from './lib/locationPrefsStore'
 import { computePurchaseSavings } from './lib/purchaseSavings'
 import type { AppTab, FilterId, PurchasePlace, StockItem } from './types'
 import './App.css'
@@ -45,7 +47,7 @@ function AppShell() {
     togglePurchased,
   } = useItems(household.active?.id ?? null)
 
-  const { hasCache, getLineForItem, result: budgetResult } = useBudgetCache()
+  const { hasCacheFor, getLineForItemAt, result: budgetResult } = useBudgetCache()
   const { addPurchaseSavings } = useSavings()
 
   const [tab, setTab] = useState<AppTab>('list')
@@ -56,6 +58,17 @@ function AppShell() {
   const [mailsOpen, setMailsOpen] = useState(false)
   const [placeItem, setPlaceItem] = useState<StockItem | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [locationKey, setLocationKey] = useState(() =>
+    budgetLocationKey(locationPrefsStore.load()),
+  )
+  const hasCache = hasCacheFor(locationKey)
+  const getLineForItem = (itemId: string) => getLineForItemAt(itemId, locationKey)
+
+  useEffect(() => {
+    if (tab === 'list' || tab === 'budget') {
+      setLocationKey(budgetLocationKey(locationPrefsStore.load()))
+    }
+  }, [tab, budgetResult])
 
   function openCreate() {
     setEditing(null)
