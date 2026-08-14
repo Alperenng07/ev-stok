@@ -26,13 +26,15 @@ import type { GeocodeHit, LocationPreference, ShoppingLocation } from '../types/
 type Props = {
   prefs: LocationPreference
   onChange: (prefs: LocationPreference) => void
+  /** Kaydet/seç sonrası — güncel prefs ile bütçe hesabı */
+  onUseLocation?: (prefs: LocationPreference) => void
 }
 
 type AddMode = 'address' | 'gps'
 
-export function LocationPicker({ prefs, onChange }: Props) {
+export function LocationPicker({ prefs, onChange, onUseLocation }: Props) {
   const [adding, setAdding] = useState(false)
-  const [addMode, setAddMode] = useState<AddMode>('address')
+  const [addMode, setAddMode] = useState<AddMode>('gps')
   const [name, setName] = useState('Ev')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -180,11 +182,15 @@ export function LocationPicker({ prefs, onChange }: Props) {
   }
 
   function selectLive() {
-    persist({ ...prefs, mode: 'live', savedId: null })
+    const next = { ...prefs, mode: 'live' as const, savedId: null }
+    persist(next)
+    onUseLocation?.(next)
   }
 
   function selectSaved(id: string) {
-    persist({ ...prefs, mode: 'saved', savedId: id })
+    const next = { ...prefs, mode: 'saved' as const, savedId: id }
+    persist(next)
+    onUseLocation?.(next)
   }
 
   function removePlace(id: string) {
@@ -213,25 +219,29 @@ export function LocationPicker({ prefs, onChange }: Props) {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     }
-    persist({ mode: 'saved', savedId: next.id, places: [...prefs.places, next] })
+    const nextPrefs: LocationPreference = {
+      mode: 'saved',
+      savedId: next.id,
+      places: [...prefs.places, next],
+    }
+    persist(nextPrefs)
     setAdding(false)
     resetAddressForm()
-    setMsg(`“${next.name}” kaydedildi ve seçildi.`)
+    setMsg(`“${next.name}” kaydedildi ve seçildi. Bu konumla fiyat aranabilir.`)
     setErr(null)
     setShowPermissionHelp(false)
+    onUseLocation?.(nextPrefs)
   }
 
   function currentParts(streetOverride?: string): StructuredAddress | null {
     if (!province || !district) return null
     const mahalle = neighborhood?.name || neighborhoodQuery.trim()
     if (!mahalle) return null
-    const streetValue = (streetOverride ?? street).trim()
-    if (!streetValue) return null
     return {
       province: province.name,
       district: district.name,
       neighborhood: mahalle,
-      street: streetValue,
+      street: (streetOverride ?? street).trim(),
       buildingNo: '',
     }
   }
@@ -239,7 +249,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
   async function findAndSave(hit?: GeocodeHit) {
     const parts = currentParts(hit?.name)
     if (!parts) {
-      setErr('İl, ilçe, mahalle ve sokak seç/yaz.')
+      setErr('İl, ilçe ve mahalle seç/yaz. Sokak isteğe bağlı.')
       return
     }
     setBusy(true)
@@ -247,10 +257,9 @@ export function LocationPicker({ prefs, onChange }: Props) {
     setShowPermissionHelp(false)
     try {
       if (hit) {
-        // Öneri seçildi: yine de ilçe doğrula
         if (!hitMatchesRegion(hit, parts.province, parts.district)) {
           setErr(
-            `Bu sonuç seçilen ilçeyle uyuşmuyor (${parts.district}). Listeden doğru sokak/konumu seç.`,
+            `Bu sonuç seçilen ilçeyle uyuşmuyor (${parts.district}). Listeden doğru olanı seç.`,
           )
           return
         }
@@ -264,16 +273,15 @@ export function LocationPicker({ prefs, onChange }: Props) {
       }
       const hits = await searchStructuredAddress(parts, searchBias)
       if (hits.length === 0) {
-        setErr('Bu adres bulunamadı. Mahalle veya sokak adını kontrol edip tekrar dene.')
+        setErr('Bu adres bulunamadı. Mahalle adını kontrol et veya anlık GPS ile kaydet.')
         setResolveHits([])
         return
       }
-      // Her zaman kullanıcıya göster — yanlış ilçeye otomatik kaydetme
       setResolveHits(hits)
       setMsg(
         hits.length === 1
-          ? 'Bulunan konumu kontrol edip seç (ilçe doğru mu?).'
-          : 'Birden fazla sonuç var — doğru olanı seç (ilçene bak).',
+          ? 'Bulunan konumu kontrol edip seç — sonra Ev ile fiyat aranır.'
+          : 'Doğru sonucu seç (ilçene bak). Seçince Ev kaydolur.',
       )
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Adres bulunamadı')
@@ -315,7 +323,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
   }
 
   const selected = prefs.places.find((p) => p.id === prefs.savedId)
-  const canResolve = Boolean(province && district && (neighborhood || neighborhoodQuery.trim()) && street.trim())
+  const canResolve = Boolean(province && district && (neighborhood || neighborhoodQuery.trim()))
 
   return (
     <div className="loc-picker">
@@ -332,12 +340,12 @@ export function LocationPicker({ prefs, onChange }: Props) {
             setResolveHits([])
           }}
         >
-          {adding ? 'Kapat' : '+ Konum ekle'}
+          {adding ? 'Kapat' : '+ Ev / konum ekle'}
         </button>
       </div>
       <p className="loc-hint">
-        İlçe seçtikten sonra sonuçlar sadece o ilçe içinde aranır. Listede Kadıköy/Moda gibi başka
-        ilçe görürsen kaydetme — yanlış sonuçtur.
+        En kolayı: anlık GPS ile “Ev” kaydet. Adresle ekliyorsan il / ilçe / mahalle yeter (sokak
+        isteğe bağlı). “Ev” seçiliyken hesaplama o adrese göre yapılır.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -367,14 +375,44 @@ export function LocationPicker({ prefs, onChange }: Props) {
 
       {prefs.mode === 'saved' && selected ? (
         <div className="banner ok">
-          {selected.name}: {selected.label}
+          Arama konumu: <strong>{selected.name}</strong> — {selected.label}
           <br />
           <small>
             {selected.lat.toFixed(5)}, {selected.lng.toFixed(5)}
           </small>
+          {onUseLocation ? (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() =>
+                  onUseLocation({
+                    ...prefs,
+                    mode: 'saved',
+                    savedId: selected.id,
+                  })
+                }
+              >
+                Bu konumla ({selected.name}) fiyatları hesapla
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
-        <div className="banner">Hesaplama anlık GPS ile yapılır (izin gerekir).</div>
+        <div className="banner">
+          Arama anlık GPS ile yapılır.
+          {onUseLocation ? (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => onUseLocation({ ...prefs, mode: 'live', savedId: null })}
+              >
+                Anlık konumla fiyatları hesapla
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {msg ? <div className="banner ok">{msg}</div> : null}
@@ -414,19 +452,36 @@ export function LocationPicker({ prefs, onChange }: Props) {
           <div className="filters loc-chips" role="tablist" aria-label="Ekleme yöntemi">
             <button
               type="button"
+              className={addMode === 'gps' ? 'active' : ''}
+              onClick={() => setAddMode('gps')}
+            >
+              Anlık GPS (önerilen)
+            </button>
+            <button
+              type="button"
               className={addMode === 'address' ? 'active' : ''}
               onClick={() => setAddMode('address')}
             >
               Adres seç
             </button>
-            <button
-              type="button"
-              className={addMode === 'gps' ? 'active' : ''}
-              onClick={() => setAddMode('gps')}
-            >
-              Anlık GPS
-            </button>
           </div>
+
+          {addMode === 'gps' ? (
+            <>
+              <p className="loc-hint">
+                Telefondaysan en doğru yol bu: GPS ile Aldığın konumu “Ev” diye kaydet, sonra o
+                chip’le fiyat ara.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => void saveCurrent()}
+              >
+                {busy ? 'Konum alınıyor…' : 'Anlık konumumu Ev olarak kaydet'}
+              </button>
+            </>
+          ) : null}
 
           {addMode === 'address' ? (
             <>
@@ -486,7 +541,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
                     setNeighborhoodId(null)
                     setResolveHits([])
                   }}
-                  placeholder={districtId == null ? 'Önce ilçe seç' : 'Mahalle ara / yaz'}
+                  placeholder={districtId == null ? 'Önce ilçe seç' : 'Örn. Akçeşme'}
                 />
               </label>
               {districtId != null && filteredNeighborhoods.length > 0 ? (
@@ -510,7 +565,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
               ) : null}
 
               <label className="field">
-                <span>Sokak / Cadde</span>
+                <span>Sokak / Cadde (isteğe bağlı)</span>
                 <input
                   value={street}
                   disabled={!province || !district}
@@ -518,7 +573,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
                     setStreet(e.target.value)
                     setResolveHits([])
                   }}
-                  placeholder="Örn. Atatürk Cad. / Gül Sk."
+                  placeholder="Boş bırakabilirsin"
                 />
               </label>
               {streetHits.length > 0 ? (
@@ -558,7 +613,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
                       <small>
                         {hit.label}
                         <br />
-                        {hit.lat.toFixed(5)}, {hit.lng.toFixed(5)} — dokununca kaydet
+                        {hit.lat.toFixed(5)}, {hit.lng.toFixed(5)} — dokununca Ev kaydet
                       </small>
                     </button>
                   ))}
@@ -571,21 +626,10 @@ export function LocationPicker({ prefs, onChange }: Props) {
                 disabled={busy || !canResolve}
                 onClick={() => void findAndSave()}
               >
-                {busy ? 'Bulunuyor…' : 'Konumu bul ve kaydet'}
+                {busy ? 'Bulunuyor…' : 'Adresi bul ve Ev kaydet'}
               </button>
               {listsBusy ? <p className="loc-hint">Listeler yükleniyor…</p> : null}
             </>
-          ) : null}
-
-          {addMode === 'gps' ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => void saveCurrent()}
-            >
-              {busy ? 'Konum alınıyor…' : 'Şu anki konumumu kaydet'}
-            </button>
           ) : null}
 
           {prefs.places.length > 0 ? (
