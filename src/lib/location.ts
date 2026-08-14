@@ -59,7 +59,7 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
   const lng = pos.coords.longitude
   if (!isValidTurkeyCoord(lat, lng)) {
     throw new LocationError(
-      'Konum Türkiye dışında görünüyor. Kayıtlı bir alışveriş konumu (Google Maps pin) seç.',
+      'Konum Türkiye dışında görünüyor. Kayıtlı bir alışveriş konumu seç.',
       'other',
     )
   }
@@ -78,7 +78,7 @@ export async function resolveBudgetLocation(
       throw new LocationError('Kayıtlı konum bulunamadı. Yeniden seç veya anlık konum kullan.')
     }
     if (!isValidTurkeyCoord(place.lat, place.lng)) {
-      throw new LocationError('Kayıtlı konum geçersiz. Google Maps linkiyle yeniden ekle.')
+      throw new LocationError('Kayıtlı konum geçersiz. Adresi yeniden ekle.')
     }
     return {
       lat: place.lat,

@@ -31,7 +31,18 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   const [status, setStatus] = useState<string | null>(null)
   const [needPermissionHelp, setNeedPermissionHelp] = useState(false)
   const autoStarted = useRef(false)
+  const lastLocKey = useRef<string | null>(null)
   const permissionGuide = getLocationPermissionGuide()
+
+  const locationKey =
+    locPrefs.mode === 'saved' && locPrefs.savedId
+      ? (() => {
+          const place = locPrefs.places.find((p) => p.id === locPrefs.savedId)
+          return place
+            ? `saved:${place.id}:${place.lat.toFixed(5)},${place.lng.toFixed(5)}`
+            : `saved:${locPrefs.savedId}`
+        })()
+      : 'live'
 
   const selected: BudgetPlan | null =
     result?.plans.find((p) => p.id === selectedId) ?? result?.plans[0] ?? null
@@ -83,10 +94,11 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   useEffect(() => {
     if (autostart && !autoStarted.current && !loading) {
       autoStarted.current = true
+      lastLocKey.current = locationKey
       void runPlanner()
       onAutostartConsumed?.()
     }
-  }, [autostart, loading, runPlanner, onAutostartConsumed])
+  }, [autostart, loading, runPlanner, onAutostartConsumed, locationKey])
 
   useEffect(() => {
     if (cached && !result) {
@@ -94,6 +106,21 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
       setSelectedId(cached.plans[0]?.id ?? null)
     }
   }, [cached, result])
+
+  // Konum değişince eski marketfiyati sonucunu atıp yeni adrese göre yeniden çek
+  useEffect(() => {
+    if (lastLocKey.current === null) {
+      lastLocKey.current = locationKey
+      return
+    }
+    if (lastLocKey.current === locationKey) return
+    lastLocKey.current = locationKey
+    setResult(null)
+    setCache(null)
+    setSelectedId(null)
+    setError(null)
+    if (pending.length > 0) void runPlanner()
+  }, [locationKey, pending.length, runPlanner, setCache])
 
   return (
     <section className="panel">

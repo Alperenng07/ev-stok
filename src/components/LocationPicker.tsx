@@ -47,8 +47,6 @@ export function LocationPicker({ prefs, onChange }: Props) {
   const [neighborhoodId, setNeighborhoodId] = useState<number | null>(null)
   const [neighborhoodQuery, setNeighborhoodQuery] = useState('')
   const [street, setStreet] = useState('')
-  const [buildingNo, setBuildingNo] = useState('')
-  const [apartment, setApartment] = useState('')
 
   const [streetHits, setStreetHits] = useState<GeocodeHit[]>([])
   const [resolveHits, setResolveHits] = useState<GeocodeHit[]>([])
@@ -181,8 +179,6 @@ export function LocationPicker({ prefs, onChange }: Props) {
     setNeighborhoodId(null)
     setNeighborhoodQuery('')
     setStreet('')
-    setBuildingNo('')
-    setApartment('')
     setStreetHits([])
     setResolveHits([])
   }
@@ -216,8 +212,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
       district: district.name,
       neighborhood: mahalle,
       street: streetValue,
-      buildingNo: buildingNo.trim(),
-      apartment: apartment.trim(),
+      buildingNo: '',
     }
   }
 
@@ -242,7 +237,7 @@ export function LocationPicker({ prefs, onChange }: Props) {
       }
       const hits = await searchStructuredAddress(parts, bias)
       if (hits.length === 0) {
-        setErr('Bu adres bulunamadı. Sokak/No’yu kontrol edip tekrar dene.')
+        setErr('Bu adres bulunamadı. Mahalle veya sokak adını kontrol edip tekrar dene.')
         setResolveHits([])
         return
       }
@@ -318,8 +313,8 @@ export function LocationPicker({ prefs, onChange }: Props) {
         </button>
       </div>
       <p className="loc-hint">
-        İl → ilçe → mahalle → sokak → no → daire seçerek kaydet. Listeler Türkiye adres verisinden
-        gelir; sokak önerileri otomatik bulunur.
+        İl → ilçe → mahalle → sokak seçerek kaydet. Listeler Türkiye adres verisinden gelir; sokak
+        önerileri otomatik bulunur.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -522,25 +517,6 @@ export function LocationPicker({ prefs, onChange }: Props) {
                   ))}
                 </div>
               ) : null}
-
-              <div className="loc-row-2">
-                <label className="field">
-                  <span>Kapı no</span>
-                  <input
-                    value={buildingNo}
-                    onChange={(e) => setBuildingNo(e.target.value)}
-                    placeholder="12"
-                  />
-                </label>
-                <label className="field">
-                  <span>Daire</span>
-                  <input
-                    value={apartment}
-                    onChange={(e) => setApartment(e.target.value)}
-                    placeholder="5"
-                  />
-                </label>
-              </div>
 
               {resolveHits.length > 0 ? (
                 <div className="loc-hits">
