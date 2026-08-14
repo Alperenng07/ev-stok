@@ -342,6 +342,7 @@ function AppShell() {
       <PurchasePlaceModal
         open={Boolean(placeItem)}
         itemName={placeItem?.name ?? null}
+        offers={placeItem ? getLineForItem(placeItem.id)?.offers ?? [] : null}
         onClose={() => setPlaceItem(null)}
         onConfirm={(place) => void onPlaceConfirm(place)}
       />

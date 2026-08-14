@@ -44,10 +44,56 @@ export function formatChainName(raw: string): string {
   return chainById(normalizeChainId(raw)).name
 }
 
-/** “Nereden aldın?” seçenekleri — bilinen marketler + Diğer */
-export function purchasePlaceOptions(): { id: string; label: string; color: string }[] {
+export type PurchasePlaceOption = {
+  id: string
+  label: string
+  color: string
+  unitPrice?: number
+}
+
+/**
+ * “Nereden aldın?” seçenekleri.
+ * `availableChainIds` verilirse yalnızca fiyatı olan marketler + Diğer.
+ * Verilmezse / boşsa yalnızca Diğer (fiyatsız market seçilemez).
+ */
+export function purchasePlaceOptions(
+  availableChainIds?: Iterable<string> | null,
+): PurchasePlaceOption[] {
+  const other: PurchasePlaceOption = { id: 'other', label: 'Diğer', color: '#5B6B63' }
+  if (!availableChainIds) return [other]
+
+  const ids = [...new Set([...availableChainIds].map((id) => normalizeChainId(id)))].filter(
+    (id) => id && id !== 'other',
+  )
+  if (ids.length === 0) return [other]
+
+  const knownOrder = new Map(KNOWN_CHAINS.map((c, i) => [c.id, i]))
+  ids.sort((a, b) => (knownOrder.get(a) ?? 99) - (knownOrder.get(b) ?? 99))
+
   return [
-    ...KNOWN_CHAINS.map((c) => ({ id: c.id, label: c.name, color: c.color })),
-    { id: 'other', label: 'Diğer', color: '#5B6B63' },
+    ...ids.map((id) => {
+      const chain = chainById(id)
+      return { id: chain.id, label: chain.name, color: chain.color }
+    }),
+    other,
   ]
+}
+
+/** Tekliflerden en ucuz birim fiyatı olan zincirleri seçenek listesine çevirir. */
+export function purchasePlaceOptionsFromOffers(
+  offers: { chainId: string; unitPrice: number }[] | null | undefined,
+): PurchasePlaceOption[] {
+  if (!offers || offers.length === 0) return purchasePlaceOptions([])
+
+  const best = new Map<string, number>()
+  for (const o of offers) {
+    const id = normalizeChainId(o.chainId)
+    if (!id || id === 'other') continue
+    const prev = best.get(id)
+    if (prev == null || o.unitPrice < prev) best.set(id, o.unitPrice)
+  }
+
+  return purchasePlaceOptions(best.keys()).map((opt) =>
+    opt.id === 'other' ? opt : { ...opt, unitPrice: best.get(opt.id) },
+  )
 }

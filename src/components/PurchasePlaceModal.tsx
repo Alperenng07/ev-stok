@@ -1,15 +1,21 @@
-import { purchasePlaceOptions } from '../lib/chains'
+import { purchasePlaceOptionsFromOffers, type PurchasePlaceOption } from '../lib/chains'
+import { formatTry } from '../lib/budgetPlanner'
 import type { PurchasePlace } from '../types'
 
 type Props = {
   open: boolean
   itemName: string | null
+  /** Bu ürün için son bütçe hesabındaki teklifler; yoksa yalnızca Diğer */
+  offers?: { chainId: string; unitPrice: number }[] | null
   onClose: () => void
   onConfirm: (place: PurchasePlace) => void
 }
 
-export function PurchasePlaceModal({ open, itemName, onClose, onConfirm }: Props) {
+export function PurchasePlaceModal({ open, itemName, offers, onClose, onConfirm }: Props) {
   if (!open) return null
+
+  const options: PurchasePlaceOption[] = purchasePlaceOptionsFromOffers(offers)
+  const pricedCount = options.filter((o) => o.id !== 'other').length
 
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
@@ -27,8 +33,13 @@ export function PurchasePlaceModal({ open, itemName, onClose, onConfirm }: Props
           </button>
         </div>
         {itemName ? <p className="sheet-sub">{itemName}</p> : null}
+        <p className="sheet-sub">
+          {pricedCount > 0
+            ? 'Yalnızca bu ürün için fiyatı bulunan marketler listeleniyor.'
+            : 'Bu ürün için hesaplanmış market fiyatı yok. Diğer’i seçebilir veya önce Hesapla.'}
+        </p>
         <div className="place-grid">
-          {purchasePlaceOptions().map((opt) => (
+          {options.map((opt) => (
             <button
               key={opt.id}
               type="button"
@@ -37,7 +48,12 @@ export function PurchasePlaceModal({ open, itemName, onClose, onConfirm }: Props
               onClick={() => onConfirm({ placeId: opt.id, placeLabel: opt.label })}
             >
               <span className="place-dot" style={{ background: opt.color }} />
-              {opt.label}
+              <span className="place-label">
+                {opt.label}
+                {opt.unitPrice != null ? (
+                  <small className="place-price">{formatTry(opt.unitPrice)}</small>
+                ) : null}
+              </span>
             </button>
           ))}
         </div>
