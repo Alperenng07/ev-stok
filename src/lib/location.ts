@@ -5,6 +5,8 @@ export type UserLocation = {
   lat: number
   lng: number
   label: string
+  /** Reverse-geocode ile doğrulanmış adres (asıl nokta) */
+  resolvedAddress: string
   accuracyM: number | null
 }
 
@@ -76,11 +78,10 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
   }
   const accuracyM = pos.coords.accuracy ?? null
   const reversed = await reverseGeocode(lat, lng)
-  const label = reversed?.label
-    ? `${reversed.label} (${lat.toFixed(5)}, ${lng.toFixed(5)})`
-    : `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  const resolvedAddress = reversed?.label ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  const label = `${resolvedAddress} (${lat.toFixed(5)}, ${lng.toFixed(5)})`
 
-  return { lat, lng, label, accuracyM }
+  return { lat, lng, label, resolvedAddress, accuracyM }
 }
 
 export async function resolveBudgetLocation(
@@ -92,12 +93,16 @@ export async function resolveBudgetLocation(
       throw new LocationError('Kayıtlı konum bulunamadı. Yeniden seç veya anlık konum kullan.')
     }
     if (!isValidTurkeyCoord(place.lat, place.lng)) {
-      throw new LocationError('Kayıtlı konum geçersiz. Adresi yeniden ekle.')
+      throw new LocationError('Kayıtlı konum geçersiz. Adresi silip yeniden ekle.')
     }
+    const reversed = await reverseGeocode(place.lat, place.lng)
+    const resolvedAddress =
+      reversed?.label ?? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}`
     return {
       lat: place.lat,
       lng: place.lng,
-      label: `${place.name} · ${place.label}`,
+      label: `${place.name} · ${resolvedAddress}`,
+      resolvedAddress,
       accuracyM: null,
     }
   }

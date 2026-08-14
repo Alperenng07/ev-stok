@@ -1354,6 +1354,13 @@ button {
   line-height: 1.4;
 }
 
+.store-preview {
+  margin: 8px 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .loc-chips {
   margin-bottom: 8px;
 }

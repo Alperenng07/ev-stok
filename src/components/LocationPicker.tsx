@@ -344,8 +344,9 @@ export function LocationPicker({ prefs, onChange, onUseLocation }: Props) {
         </button>
       </div>
       <p className="loc-hint">
-        En kolayı: anlık GPS ile “Ev” kaydet. Adresle ekliyorsan il / ilçe / mahalle yeter (sokak
-        isteğe bağlı). “Ev” seçiliyken hesaplama o adrese göre yapılır.
+        Ev / İş seçince fiyatlar o pin’in yakınındaki marketlerden çekilir. Eski kayıt yanlış
+        şehirdeyse sil → “Anlık GPS ile Ev kaydet”. Hesap sonrası listede şube adlarını kontrol et
+        (Denizli yazıyorsa doğru).
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">

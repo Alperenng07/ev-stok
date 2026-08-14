@@ -74,7 +74,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
       try {
         const loc = await resolveBudgetLocation(activePrefs)
         setStatus(
-          `Konum: ${loc.label} — marketfiyati.org.tr’den ${pending.length} ürün için canlı fiyat çekiliyor…`,
+          `Doğrulanan konum: ${loc.resolvedAddress} — yakındaki marketler alınıyor…`,
         )
         const next = await buildLiveBudgetPlans({
           pendingItems: pending,
@@ -82,7 +82,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
           longitude: loc.lng,
           locationLabel: loc.label,
           locationKey: key,
-          distanceKm: 8,
+          resolvedAddress: loc.resolvedAddress,
         })
         setResult(next)
         setCache(next)
@@ -225,9 +225,29 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
       {activeResult ? (
         <div className="budget-body">
           <div className="banner ok">
-            Konum: {activeResult.locationLabel} ({activeResult.location.lat.toFixed(4)},{' '}
-            {activeResult.location.lng.toFixed(4)})
+            Arama noktası: <strong>{activeResult.resolvedAddress}</strong>
+            <br />
+            <small>
+              {activeResult.locationLabel} ({activeResult.location.lat.toFixed(5)},{' '}
+              {activeResult.location.lng.toFixed(5)})
+            </small>
           </div>
+          {activeResult.stores.length > 0 ? (
+            <div className="banner">
+              <strong>Bu konumda aranan marketler</strong>
+              <ul className="store-preview">
+                {activeResult.stores.slice(0, 8).map((s) => (
+                  <li key={s.id}>
+                    {s.name}
+                    {Number.isFinite(s.distanceKm) ? ` · ${s.distanceKm} km` : ''}
+                  </li>
+                ))}
+              </ul>
+              {activeResult.stores.length > 8 ? (
+                <small>+{activeResult.stores.length - 8} market daha</small>
+              ) : null}
+            </div>
+          ) : null}
           <div className="banner">{activeResult.disclaimer}</div>
 
           <h3 className="section-h">Ürün eşleşmeleri</h3>
