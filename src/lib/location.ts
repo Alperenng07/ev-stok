@@ -8,17 +8,27 @@ export type UserLocation = {
   accuracyM: number | null
 }
 
+export type LocationErrorCode =
+  | 'permission'
+  | 'unavailable'
+  | 'timeout'
+  | 'unsupported'
+  | 'other'
+
 export class LocationError extends Error {
-  constructor(message: string) {
+  code: LocationErrorCode
+
+  constructor(message: string, code: LocationErrorCode = 'other') {
     super(message)
     this.name = 'LocationError'
+    this.code = code
   }
 }
 
 /** Tarayıcı GPS konumunu ister. İzin yoksa hata fırlatır. */
 export async function resolveLiveLocation(): Promise<UserLocation> {
   if (!('geolocation' in navigator)) {
-    throw new LocationError('Bu tarayıcı konum desteklemiyor.')
+    throw new LocationError('Bu tarayıcı konum desteklemiyor.', 'unsupported')
   }
 
   const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -30,22 +40,28 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
   }).catch((err: GeolocationPositionError | Error) => {
     if ('code' in err) {
       if (err.code === err.PERMISSION_DENIED) {
-        throw new LocationError('Konum izni gerekli. Tarayıcı ayarlarından izin verip tekrar dene.')
+        throw new LocationError(
+          'Konum izni kapalı. Aşağıdaki adımlarla tarayıcıda bu siteye izin ver.',
+          'permission',
+        )
       }
       if (err.code === err.POSITION_UNAVAILABLE) {
-        throw new LocationError('Konum alınamadı. Konum servislerini açıp tekrar dene.')
+        throw new LocationError('Konum alınamadı. Cihaz konumunu açıp tekrar dene.', 'unavailable')
       }
       if (err.code === err.TIMEOUT) {
-        throw new LocationError('Konum zaman aşımına uğradı. Tekrar dene.')
+        throw new LocationError('Konum zaman aşımına uğradı. Tekrar dene.', 'timeout')
       }
     }
-    throw new LocationError(err instanceof Error ? err.message : 'Konum alınamadı')
+    throw new LocationError(err instanceof Error ? err.message : 'Konum alınamadı', 'other')
   })
 
   const lat = pos.coords.latitude
   const lng = pos.coords.longitude
   if (!isValidTurkeyCoord(lat, lng)) {
-    throw new LocationError('Konum Türkiye dışında görünüyor. Kayıtlı bir alışveriş konumu seç.')
+    throw new LocationError(
+      'Konum Türkiye dışında görünüyor. Kayıtlı bir alışveriş konumu (Google Maps pin) seç.',
+      'other',
+    )
   }
   const accuracyM = pos.coords.accuracy ?? null
   const label = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
@@ -53,7 +69,6 @@ export async function resolveLiveLocation(): Promise<UserLocation> {
   return { lat, lng, label, accuracyM }
 }
 
-/** Bütçe hesabı için seçili kaynağı çözümler (anlık veya kayıtlı). */
 export async function resolveBudgetLocation(
   prefs: LocationPreference,
 ): Promise<UserLocation> {
@@ -63,7 +78,7 @@ export async function resolveBudgetLocation(
       throw new LocationError('Kayıtlı konum bulunamadı. Yeniden seç veya anlık konum kullan.')
     }
     if (!isValidTurkeyCoord(place.lat, place.lng)) {
-      throw new LocationError('Kayıtlı konum geçersiz. Haritadan veya açık adresle yeniden ekle.')
+      throw new LocationError('Kayıtlı konum geçersiz. Google Maps linkiyle yeniden ekle.')
     }
     return {
       lat: place.lat,

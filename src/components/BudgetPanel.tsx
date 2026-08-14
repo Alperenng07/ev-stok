@@ -3,8 +3,12 @@ import { LocationPicker } from './LocationPicker'
 import { useBudgetCache } from '../context/BudgetCacheContext'
 import { buildLiveBudgetPlans, formatTry } from '../lib/budgetPlanner'
 import { chainById } from '../lib/chains'
-import { resolveBudgetLocation } from '../lib/location'
+import { LocationError, resolveBudgetLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
+import {
+  getLocationPermissionGuide,
+  tryOpenBrowserLocationSettings,
+} from '../lib/permissionHelp'
 import type { StockItem } from '../types'
 import type { BudgetPlan, BudgetResult } from '../types/budget'
 import type { LocationPreference } from '../types/location'
@@ -25,7 +29,9 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(cached?.plans[0]?.id ?? null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  const [needPermissionHelp, setNeedPermissionHelp] = useState(false)
   const autoStarted = useRef(false)
+  const permissionGuide = getLocationPermissionGuide()
 
   const selected: BudgetPlan | null =
     result?.plans.find((p) => p.id === selectedId) ?? result?.plans[0] ?? null
@@ -39,6 +45,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     }
     setLoading(true)
     setError(null)
+    setNeedPermissionHelp(false)
     setStatus(
       locPrefs.mode === 'saved'
         ? 'Kayıtlı konum yükleniyor…'
@@ -66,6 +73,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     } catch (err) {
       setResult(null)
       setError(err instanceof Error ? err.message : 'Plan oluşturulamadı')
+      setNeedPermissionHelp(err instanceof LocationError && err.code === 'permission')
       setStatus(null)
     } finally {
       setLoading(false)
@@ -121,6 +129,40 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
 
       {status ? <div className="banner ok">{status}</div> : null}
       {error ? <div className="banner err">{error}</div> : null}
+      {needPermissionHelp ? (
+        <div className="loc-perm">
+          <strong>{permissionGuide.title}</strong>
+          <ol>
+            {permissionGuide.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          {permissionGuide.settingsLabel ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                const ok = tryOpenBrowserLocationSettings(permissionGuide.settingsUrl)
+                if (!ok) {
+                  setError(
+                    'Tarayıcı ayar sayfasını otomatik açamadı. Adres çubuğundaki kilit → Konum → İzin ver.',
+                  )
+                }
+              }}
+            >
+              {permissionGuide.settingsLabel}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={loading}
+            onClick={() => void runPlanner()}
+          >
+            İzin verdim, tekrar hesapla
+          </button>
+        </div>
+      ) : null}
 
       {result ? (
         <div className="budget-body">

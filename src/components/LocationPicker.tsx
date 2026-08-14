@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
-  DEFAULT_MAP_CENTER,
-  isValidTurkeyCoord,
-  reverseGeocode,
-  searchStructuredAddress,
-  type StructuredAddress,
-} from '../lib/geocode'
-import { resolveLiveLocation } from '../lib/location'
+  googleMapsOpenUrl,
+  resolveMapsLinkToPlace,
+} from '../lib/googleMapsLink'
+import { isValidTurkeyCoord } from '../lib/geocode'
+import { LocationError, resolveLiveLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
-import { TURKEY_PROVINCES } from '../lib/turkeyProvinces'
-import type { GeocodeHit, LocationPreference, ShoppingLocation } from '../types/location'
+import {
+  getLocationPermissionGuide,
+  tryOpenBrowserLocationSettings,
+} from '../lib/permissionHelp'
+import type { LocationPreference, ShoppingLocation } from '../types/location'
 import { LocationMapFrame } from './LocationMapFrame'
 
 type Props = {
@@ -17,43 +18,22 @@ type Props = {
   onChange: (prefs: LocationPreference) => void
 }
 
-type AddMode = 'form' | 'map' | 'gps'
-
-const EMPTY_ADDR: StructuredAddress = {
-  province: 'İstanbul',
-  district: '',
-  neighborhood: '',
-  street: '',
-  buildingNo: '',
-}
+type AddMode = 'google' | 'map' | 'gps'
 
 export function LocationPicker({ prefs, onChange }: Props) {
   const [adding, setAdding] = useState(false)
-  const [addMode, setAddMode] = useState<AddMode>('form')
+  const [addMode, setAddMode] = useState<AddMode>('google')
   const [name, setName] = useState('Ev')
-  const [addr, setAddr] = useState<StructuredAddress>(EMPTY_ADDR)
-  const [hits, setHits] = useState<GeocodeHit[]>([])
-  const [searching, setSearching] = useState(false)
+  const [mapsLink, setMapsLink] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [mapPin, setMapPin] = useState(DEFAULT_MAP_CENTER)
+  const [showPermissionHelp, setShowPermissionHelp] = useState(false)
+  const [mapPin, setMapPin] = useState({ lat: 41.0082, lng: 28.9784 })
   const [mapLabel, setMapLabel] = useState('Haritadan seçilen nokta')
   const [mapKey, setMapKey] = useState(0)
 
-  useEffect(() => {
-    if (!adding || addMode !== 'map') return
-    let cancelled = false
-    const t = window.setTimeout(() => {
-      void reverseGeocode(mapPin.lat, mapPin.lng).then((hit) => {
-        if (!cancelled && hit) setMapLabel(hit.label)
-      })
-    }, 280)
-    return () => {
-      cancelled = true
-      window.clearTimeout(t)
-    }
-  }, [adding, addMode, mapPin.lat, mapPin.lng])
+  const permissionGuide = getLocationPermissionGuide()
 
   function persist(next: LocationPreference) {
     locationPrefsStore.save(next)
@@ -71,16 +51,12 @@ export function LocationPicker({ prefs, onChange }: Props) {
   function removePlace(id: string) {
     const places = prefs.places.filter((p) => p.id !== id)
     const savedId = prefs.savedId === id ? null : prefs.savedId
-    persist({
-      places,
-      savedId,
-      mode: savedId ? 'saved' : 'live',
-    })
+    persist({ places, savedId, mode: savedId ? 'saved' : 'live' })
   }
 
   function addPlace(place: Omit<ShoppingLocation, 'id' | 'createdAt'>) {
     if (!isValidTurkeyCoord(place.lat, place.lng)) {
-      setErr('Seçilen nokta Türkiye dışında. Yeniden dene.')
+      setErr('Seçilen nokta Türkiye dışında.')
       return
     }
     const next: ShoppingLocation = {
@@ -90,62 +66,53 @@ export function LocationPicker({ prefs, onChange }: Props) {
     }
     persist({ mode: 'saved', savedId: next.id, places: [...prefs.places, next] })
     setAdding(false)
-    setHits([])
+    setMapsLink('')
     setMsg(`“${next.name}” kaydedildi ve seçildi.`)
     setErr(null)
+    setShowPermissionHelp(false)
   }
 
-  function setAddrField<K extends keyof StructuredAddress>(key: K, value: string) {
-    setAddr((prev) => ({ ...prev, [key]: value }))
-  }
-
-  async function runStructuredSearch() {
-    setSearching(true)
-    setErr(null)
-    setHits([])
-    try {
-      const province = TURKEY_PROVINCES.find((p) => p.name === addr.province)
-      const found = await searchStructuredAddress(addr, province)
-      setHits(found)
-      if (found.length === 0) {
-        setErr('Konum bulunamadı. İlçe/mahalle/sokak bilgisini kontrol et veya haritadan seç.')
-      } else if (found[0]) {
-        setMapPin({ lat: found[0].lat, lng: found[0].lng })
-        setMapLabel(found[0].label)
-        setMapKey((k) => k + 1)
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Adres araması başarısız')
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  async function saveCurrent() {
-    const trimmed = name.trim()
-    if (!trimmed) {
-      setErr('Konuma bir ad ver (ör. Ev, İş).')
-      return
-    }
+  async function saveFromGoogleLink() {
+    const trimmedName = name.trim() || 'Ev'
     setBusy(true)
     setErr(null)
+    setShowPermissionHelp(false)
     try {
-      const loc = await resolveLiveLocation()
-      addPlace({ name: trimmed, lat: loc.lat, lng: loc.lng, label: loc.label })
+      const place = await resolveMapsLinkToPlace(mapsLink)
+      addPlace({
+        name: trimmedName,
+        lat: place.lat,
+        lng: place.lng,
+        label: place.label,
+      })
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Konum alınamadı')
+      setErr(e instanceof Error ? e.message : 'Link okunamadı')
     } finally {
       setBusy(false)
     }
   }
 
-  function saveHit(hit: GeocodeHit) {
-    addPlace({
-      name: name.trim() || hit.name,
-      lat: hit.lat,
-      lng: hit.lng,
-      label: hit.label,
-    })
+  async function saveCurrent() {
+    const trimmedName = name.trim() || 'Ev'
+    setBusy(true)
+    setErr(null)
+    setShowPermissionHelp(false)
+    try {
+      const loc = await resolveLiveLocation()
+      addPlace({
+        name: trimmedName,
+        lat: loc.lat,
+        lng: loc.lng,
+        label: loc.label,
+      })
+    } catch (e) {
+      if (e instanceof LocationError && e.code === 'permission') {
+        setShowPermissionHelp(true)
+      }
+      setErr(e instanceof Error ? e.message : 'Konum alınamadı')
+    } finally {
+      setBusy(false)
+    }
   }
 
   function saveMapPin() {
@@ -153,31 +120,39 @@ export function LocationPicker({ prefs, onChange }: Props) {
       name: name.trim() || 'Harita konumu',
       lat: mapPin.lat,
       lng: mapPin.lng,
-      label: mapLabel,
+      label: mapLabel || `${mapPin.lat.toFixed(5)}, ${mapPin.lng.toFixed(5)}`,
     })
   }
 
   async function centerMapOnGps() {
     setBusy(true)
     setErr(null)
+    setShowPermissionHelp(false)
     try {
       const loc = await resolveLiveLocation()
       setMapPin({ lat: loc.lat, lng: loc.lng })
       setMapLabel(loc.label)
       setMapKey((k) => k + 1)
     } catch (e) {
+      if (e instanceof LocationError && e.code === 'permission') {
+        setShowPermissionHelp(true)
+      }
       setErr(e instanceof Error ? e.message : 'Konum alınamadı')
     } finally {
       setBusy(false)
     }
   }
 
-  function onProvinceChange(provinceName: string) {
-    setAddrField('province', provinceName)
-    const province = TURKEY_PROVINCES.find((p) => p.name === provinceName)
-    if (province) {
-      setMapPin({ lat: province.lat, lng: province.lng })
-      setMapKey((k) => k + 1)
+  function openGoogleMaps() {
+    window.open(googleMapsOpenUrl(), '_blank', 'noopener,noreferrer')
+  }
+
+  function openPermissionSettings() {
+    const opened = tryOpenBrowserLocationSettings(permissionGuide.settingsUrl)
+    if (!opened) {
+      setErr(
+        'Tarayıcı güvenlik nedeniyle ayar sayfasını otomatik açamadı. Adres çubuğundaki kilit simgesinden Konum iznini aç.',
+      )
     }
   }
 
@@ -194,14 +169,15 @@ export function LocationPicker({ prefs, onChange }: Props) {
             setAdding((v) => !v)
             setErr(null)
             setMsg(null)
+            setShowPermissionHelp(false)
           }}
         >
           {adding ? 'Kapat' : '+ Konum ekle'}
         </button>
       </div>
       <p className="loc-hint">
-        İl → ilçe → mahalle → sokak ile ekle; istersen haritadan pin koy. Sonra hesaplamada “Ev”
-        seç.
+        En güvenlisi: Google Maps’te pin koy → Paylaş → linki yapıştır. İşteyken eve göre hesaplamak
+        için “Ev” seç.
       </p>
 
       <div className="filters loc-chips" role="tablist" aria-label="Konum kaynağı">
@@ -238,11 +214,35 @@ export function LocationPicker({ prefs, onChange }: Props) {
           </small>
         </div>
       ) : (
-        <div className="banner">Hesaplama cihazının anlık GPS konumuna göre yapılır.</div>
+        <div className="banner">Hesaplama anlık GPS ile yapılır (izin gerekir).</div>
       )}
 
       {msg ? <div className="banner ok">{msg}</div> : null}
       {err ? <div className="banner err">{err}</div> : null}
+
+      {showPermissionHelp ? (
+        <div className="loc-perm">
+          <strong>{permissionGuide.title}</strong>
+          <ol>
+            {permissionGuide.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          {permissionGuide.settingsLabel ? (
+            <button type="button" className="btn btn-secondary" onClick={openPermissionSettings}>
+              {permissionGuide.settingsLabel}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void saveCurrent()}
+          >
+            İzin verdim, tekrar dene
+          </button>
+        </div>
+      ) : null}
 
       {adding ? (
         <div className="loc-add">
@@ -251,17 +251,17 @@ export function LocationPicker({ prefs, onChange }: Props) {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ev, İş, Anne evi…"
+              placeholder="Ev, İş…"
             />
           </label>
 
           <div className="filters loc-chips" role="tablist" aria-label="Ekleme yöntemi">
             <button
               type="button"
-              className={addMode === 'form' ? 'active' : ''}
-              onClick={() => setAddMode('form')}
+              className={addMode === 'google' ? 'active' : ''}
+              onClick={() => setAddMode('google')}
             >
-              İl / İlçe / Sokak
+              Google Maps
             </button>
             <button
               type="button"
@@ -279,84 +279,57 @@ export function LocationPicker({ prefs, onChange }: Props) {
             </button>
           </div>
 
-          {addMode === 'form' ? (
+          {addMode === 'google' ? (
             <>
+              <div className="banner ok">
+                1) Google Maps’i aç → pin koy veya yer ara
+                <br />
+                2) Paylaş → bağlantıyı kopyala
+                <br />
+                3) Buraya yapıştır → Kaydet
+                <br />
+                <small>
+                  Kısa link (maps.app.goo.gl) olursa: önce tarayıcıda aç, adres çubuğundaki uzun
+                  URL’yi kopyala.
+                </small>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={openGoogleMaps}>
+                Google Maps’te pin koy
+              </button>
               <label className="field">
-                <span>İl *</span>
-                <select
-                  value={addr.province}
-                  onChange={(e) => onProvinceChange(e.target.value)}
-                >
-                  {TURKEY_PROVINCES.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>İlçe *</span>
-                <input
-                  value={addr.district}
-                  onChange={(e) => setAddrField('district', e.target.value)}
-                  placeholder="Örn. Kadıköy"
-                />
-              </label>
-              <label className="field">
-                <span>Mahalle</span>
-                <input
-                  value={addr.neighborhood}
-                  onChange={(e) => setAddrField('neighborhood', e.target.value)}
-                  placeholder="Örn. Caferağa"
-                />
-              </label>
-              <label className="field">
-                <span>Sokak / Cadde</span>
-                <input
-                  value={addr.street}
-                  onChange={(e) => setAddrField('street', e.target.value)}
-                  placeholder="Örn. Moda Caddesi"
-                />
-              </label>
-              <label className="field">
-                <span>Kapı no</span>
-                <input
-                  value={addr.buildingNo}
-                  onChange={(e) => setAddrField('buildingNo', e.target.value)}
-                  placeholder="Örn. 12"
+                <span>Google Maps linki</span>
+                <textarea
+                  rows={3}
+                  value={mapsLink}
+                  onChange={(e) => setMapsLink(e.target.value)}
+                  placeholder="https://www.google.com/maps/place/…/@41.01,28.97… veya 41.01, 28.97"
                 />
               </label>
               <button
                 type="button"
-                className="btn btn-secondary"
-                disabled={searching}
-                onClick={() => void runStructuredSearch()}
+                className="btn btn-primary"
+                disabled={busy || !mapsLink.trim()}
+                onClick={() => void saveFromGoogleLink()}
               >
-                {searching ? 'Aranıyor…' : 'Konumu bul'}
+                {busy ? 'Okunuyor…' : 'Linkten kaydet'}
               </button>
-              {hits.length > 0 ? (
-                <div className="loc-hits">
-                  {hits.map((h) => (
-                    <button key={h.id} type="button" className="loc-hit" onClick={() => saveHit(h)}>
-                      <strong>{h.name}</strong>
-                      <small>{h.label}</small>
-                      <small>
-                        {h.lat.toFixed(5)}, {h.lng.toFixed(5)}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </>
           ) : null}
 
           {addMode === 'map' ? (
             <>
+              <p className="loc-hint">
+                Bu OpenStreetMap haritasıdır (API anahtarı gerekmez). Google pin için “Google Maps”
+                sekmesini kullan.
+              </p>
               <LocationMapFrame
                 lat={mapPin.lat}
                 lng={mapPin.lng}
                 resetKey={mapKey}
-                onPick={(coords) => setMapPin(coords)}
+                onPick={(coords) => {
+                  setMapPin(coords)
+                  setMapLabel(`${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`)
+                }}
               />
               <div className="banner">{mapLabel}</div>
               <button

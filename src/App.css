@@ -1254,8 +1254,22 @@ button {
   color: var(--muted);
 }
 
-.loc-picker {
-  margin: 4px 0 14px;
+.loc-perm {
+  margin: 8px 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(154, 77, 15, 0.25);
+  background: rgba(154, 77, 15, 0.08);
+  display: grid;
+  gap: 10px;
+}
+
+.loc-perm ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .loc-head {
