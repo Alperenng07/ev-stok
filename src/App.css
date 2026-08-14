@@ -1023,6 +1023,74 @@ button {
   gap: 2px;
 }
 
+.match-hint {
+  margin-top: -4px;
+  margin-bottom: 8px;
+}
+
+.match-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.match-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.match-card-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.match-alts {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.match-alt {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.match-alt small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.match-alt.active {
+  border-color: var(--moss, #2f6b4f);
+  background: #eaf2ee;
+}
+
+.match-alt-pick {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--moss, #2f6b4f);
+  white-space: nowrap;
+}
+
 .badge {
   font-size: 0.72rem;
   font-weight: 800;

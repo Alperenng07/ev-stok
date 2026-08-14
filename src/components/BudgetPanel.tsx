@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LocationPicker } from './LocationPicker'
 import { useBudgetCache } from '../context/BudgetCacheContext'
-import { buildLiveBudgetPlans, formatTry } from '../lib/budgetPlanner'
+import { applyCatalogChoice, buildLiveBudgetPlans, formatTry } from '../lib/budgetPlanner'
 import { chainById } from '../lib/chains'
 import { LocationError, resolveBudgetLocation } from '../lib/location'
 import { locationPrefsStore } from '../lib/locationPrefsStore'
@@ -30,6 +30,7 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [needPermissionHelp, setNeedPermissionHelp] = useState(false)
+  const [pickItemId, setPickItemId] = useState<string | null>(null)
   const autoStarted = useRef(false)
   const lastLocKey = useRef<string | null>(null)
   const permissionGuide = getLocationPermissionGuide()
@@ -122,6 +123,15 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
     if (pending.length > 0) void runPlanner()
   }, [locationKey, pending.length, runPlanner, setCache])
 
+  function chooseCatalog(itemId: string, catalogId: string) {
+    if (!result) return
+    const next = applyCatalogChoice(result, itemId, catalogId)
+    setResult(next)
+    setCache(next)
+    setSelectedId((prev) => next.plans.find((p) => p.id === prev)?.id ?? next.plans[0]?.id ?? null)
+    setPickItemId(null)
+  }
+
   return (
     <section className="panel">
       <h2 className="panel-title">Bütçe planı</h2>
@@ -198,6 +208,66 @@ export function BudgetPanel({ items, autostart, onAutostartConsumed }: Props) {
             {result.location.lng.toFixed(4)})
           </div>
           <div className="banner">{result.disclaimer}</div>
+
+          <h3 className="section-h">Ürün eşleşmeleri</h3>
+          <p className="panel-sub match-hint">
+            Otomatik seçim yanlışsa “Başka ürün seç” ile Nutella / Yumoş vb. yerine doğru ürünü seç.
+          </p>
+          {result.lines.map((line) => {
+            const candidates = line.candidates ?? []
+            const open = pickItemId === line.itemId
+            const alts = candidates.filter((c) => c.catalogId !== line.catalogId)
+            return (
+              <div key={`match-${line.itemId}`} className="match-card">
+                <div className="match-card-head">
+                  <div>
+                    <strong>{line.itemName}</strong>
+                    <small>
+                      {line.matched && line.catalogName
+                        ? `Eşleşen: ${line.catalogName}`
+                        : 'Eşleşme yok'}
+                      {line.offers[0]
+                        ? ` · en ucuz ${formatTry(line.offers[0].unitPrice)}`
+                        : ''}
+                    </small>
+                  </div>
+                  {(alts.length > 0 || (!line.matched && candidates.length > 0)) ? (
+                    <button
+                      type="button"
+                      className="btn-chip"
+                      onClick={() => setPickItemId(open ? null : line.itemId)}
+                    >
+                      {open ? 'Kapat' : line.matched ? 'Başka ürün seç' : 'Ürün seç'}
+                    </button>
+                  ) : null}
+                </div>
+                {open ? (
+                  <div className="match-alts">
+                    {candidates.map((cand) => {
+                      const active = cand.catalogId === line.catalogId
+                      return (
+                        <button
+                          key={cand.catalogId}
+                          type="button"
+                          className={`match-alt${active ? ' active' : ''}`}
+                          onClick={() => chooseCatalog(line.itemId, cand.catalogId)}
+                        >
+                          <span>
+                            <strong>{cand.catalogName}</strong>
+                            <small>
+                              en ucuz {formatTry(cand.cheapestPrice)} · skor{' '}
+                              {Math.round(cand.matchScore)}
+                            </small>
+                          </span>
+                          <span className="match-alt-pick">{active ? 'Seçili' : 'Seç'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
 
           {result.potentialSaving > 0 ? (
             <div className="saving-card">

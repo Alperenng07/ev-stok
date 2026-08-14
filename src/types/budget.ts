@@ -15,6 +15,25 @@ export type NearbyStore = {
   lng: number
 }
 
+export type PricedOffer = {
+  chainId: MarketChainId
+  chainName: string
+  storeName: string
+  distanceKm: number
+  unitPrice: number
+  lineTotal: number
+  indexTime?: string
+}
+
+/** Aynı liste kalemi için seçilebilir marketfiyati ürün adayları. */
+export type ProductCandidate = {
+  catalogId: string
+  catalogName: string
+  matchScore: number
+  cheapestPrice: number
+  offers: PricedOffer[]
+}
+
 export type PricedLine = {
   itemId: string
   itemName: string
@@ -23,15 +42,9 @@ export type PricedLine = {
   catalogId: string | null
   catalogName: string | null
   matched: boolean
-  offers: {
-    chainId: MarketChainId
-    chainName: string
-    storeName: string
-    distanceKm: number
-    unitPrice: number
-    lineTotal: number
-    indexTime?: string
-  }[]
+  offers: PricedOffer[]
+  /** Kullanıcının seçebileceği alternatif ürünler (seçili olan dahil). */
+  candidates: ProductCandidate[]
 }
 
 export type PlanLine = {
